@@ -48,12 +48,59 @@ global_daily %>%
 
 ## Exploratory analysis
 
-Iniciamos por ver cuantos valores distintos hay por cada columna
+Podemos notar que tenemos una tablas con `r dim(global_daily)[1]` filas y 
+`r dim(global_daily)[2]` columnas.
+  
+¿Cuántos valores distintos hay por cada columna?
 ```{r}
 global_daily %>% 
   summarise_all(n_distinct)
 ```
 
+Deberán llamarnos la atención que no hay correspondencia uno a uno entre conm y gvkey,
+por lo que suponemos que un conm tiene 2 gvkey... Veamos
+
+```{r}
+global_daily %>% 
+  select(gvkey, conm) %>% 
+  group_by(conm) %>% 
+  summarise(distinct_key = n_distinct(gvkey))
+```
+## Caso Nacional Financiera 
+
+Efectivamente es "NACIONAL FINANCIERA SNC" quien tiene asociados dos gvkey distintos.
+Veamos cuales son
+```{r}
+global_daily %>% 
+  filter(conm == "NACIONAL FINANCIERA SNC") %>% 
+  group_by(gvkey) %>% 
+  summarise(n = n(), prim_ap = min(datadate), ult_ap = max(datadate))
+```
+Lo que nos hace suponer que desde agosto de 2018 coexisten los dos gvkey, por lo que
+tendría que haber más de un registro por día
+```{r}
+global_daily %>% 
+  filter(conm == "NACIONAL FINANCIERA SNC") %>% 
+  group_by(datadate) %>% 
+  summarise(n = n()) %>% 
+  filter(datadate >= "2013-08-07", datadate <= "2019-11-26")
+```
+
+Efectivamente cada día hay dos registros cada uno con diferente gvkey. Tomemos de muestra
+al 2019.
+```{r}
+
+global_daily %>% 
+  mutate(year = year(datadate)) %>% 
+  filter(conm == "NACIONAL FINANCIERA SNC", year == 2019) %>% 
+  arrange(datadate)
+
+```
+
+**¡¿Qué hacemos?!** 
+¿Quitamos los 1,645 registros de gvkey 315924?
+
+***
 
 ```{r}
 global_daily %>% 
