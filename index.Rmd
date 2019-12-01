@@ -58,17 +58,18 @@ global_daily %>%
 ```
 
 Deberán llamarnos la atención que no hay correspondencia uno a uno entre conm y gvkey,
-por lo que suponemos que un conm tiene 2 gvkey... Veamos
+por lo que suponemos que un `conm` tiene 2 `gvkey`, pues hay 292 `gvkey` y 291 `conm` Veamos...
 
 ```{r}
 global_daily %>% 
   select(gvkey, conm) %>% 
   group_by(conm) %>% 
-  summarise(distinct_key = n_distinct(gvkey))
+  summarise(distinct_key = n_distinct(gvkey)) %>% 
+  filter(distinct_key > 1)
 ```
 ## Caso Nacional Financiera 
 
-Efectivamente es "NACIONAL FINANCIERA SNC" quien tiene asociados dos gvkey distintos.
+Efectivamente es "NACIONAL FINANCIERA SNC" quien tiene asociados dos `gvkey` distintos.
 Veamos cuales son
 ```{r}
 global_daily %>% 
@@ -76,7 +77,7 @@ global_daily %>%
   group_by(gvkey) %>% 
   summarise(n = n(), prim_ap = min(datadate), ult_ap = max(datadate))
 ```
-Lo que nos hace suponer que desde agosto de 2018 coexisten los dos gvkey, por lo que
+Lo que nos hace suponer que desde agosto de 2018 coexisten los dos `gvkey`, por lo que
 tendría que haber más de un registro por día
 ```{r}
 global_daily %>% 
@@ -86,7 +87,7 @@ global_daily %>%
   filter(datadate >= "2013-08-07", datadate <= "2019-11-26")
 ```
 
-Efectivamente cada día hay dos registros cada uno con diferente gvkey. Tomemos de muestra
+Efectivamente cada día hay dos registros cada uno con diferente `gvkey`. Tomemos de muestra
 al 2019.
 ```{r}
 
