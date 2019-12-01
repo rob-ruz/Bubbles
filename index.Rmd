@@ -5,12 +5,12 @@ date: "30/11/2019"
 output:
   html_document:
     df_print: paged
-    keep_md: true
 ---
 
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
+library(rvest)
 ```
 
 Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
