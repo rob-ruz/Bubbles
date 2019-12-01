@@ -2,11 +2,14 @@
 title: "Caso"
 author: "Roberto Ruz Campos"
 date: "30/11/2019"
-output: html_document
+output:
+  html_document:
+    keep_md: true
 ---
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(tidyverse)
+library(lubridate)
 ```
 
 Se importa la tabla "Compustat Global Daily"
@@ -25,7 +28,7 @@ spec(global_daily)
 ```
 
 Vista general
-```{r}
+```{r paged.print=TRUE}
 global_daily
 ```
 
