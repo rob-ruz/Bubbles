@@ -12,19 +12,21 @@ library(tidyverse)
 library(lubridate)
 ```
 
-Se importa la tabla "Compustat Global Daily"
+Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
 ```{r}
 global_daily <- read_csv("Compustat_Global_Daily.csv",
   col_types = cols(
-    sedol = "c",
-    datadate = "c"
+    sedol = col_character(), 
+    datadate = col_date(format = "%Y%m%d") 
   )
 )
 ```
 
 Tipo de variable de cada columna
 ```{r}
-spec(global_daily)
+global_daily %>%
+  summarise_all(class) %>%
+  pivot_longer(everything(), names_to = "column", values_to = "type")
 ```
 
 Vista general
@@ -77,10 +79,7 @@ global_daily %>%
 ```
 
 
-```{r}
-global_daily <- global_daily %>% 
-  mutate(date = parse_date(datadate, format = "%Y%m%d"))
-```
+
 
 ```{r}
 global_daily %>% 
