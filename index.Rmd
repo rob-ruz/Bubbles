@@ -23,6 +23,21 @@ global_daily <- read_csv("Compustat_Global_Daily.csv",
 )
 ```
 
+Extraemos de Wikipedia la tabla de códigos GICS con sus respectivos nombres.
+
+```{r message=FALSE, warning=FALSE}
+gics_table <- read_html("https://en.wikipedia.org/wiki/Global_Industry_Classification_Standard") %>%
+  html_node("table") %>%
+  html_table(fill = TRUE) %>%
+  as_tibble(.name_repair = "universal") %>%
+  distinct(gsector = Sector...1, gics_name = Sector...2)
+```
+
+Se le añaden los nombres de los sectores a la tabla original
+```{r}
+global_daily <- left_join(global_daily, gics_table, by = "gsector")
+```
+
 Tipo de variable de cada columna
 ```{r}
 global_daily %>%
@@ -139,6 +154,7 @@ global_daily %>%
   count(isin)
 
 ```
+
 
 
 
