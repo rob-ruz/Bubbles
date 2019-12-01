@@ -4,6 +4,7 @@ author: "Roberto Ruz Campos"
 date: "30/11/2019"
 output:
   html_document:
+    df_print: paged
     keep_md: true
 ---
 
