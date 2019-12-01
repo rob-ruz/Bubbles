@@ -129,8 +129,16 @@ global_daily %>%
 ```{r}
 global_daily %>% 
   mutate(year = year(datadate)) %>% 
-  #filter(conm == "CEMEX SAB DE CV") %>%
-  group_by(year, conm, isin) %>% 
-  summarise(num = n())
+  filter(conm == "CEMEX SAB DE CV", year == 2019) 
+  #group_by(year, conm, isin) %>% 
+  #summarise(num = n())
+
+global_daily %>% 
+  mutate(year = year(datadate)) %>% 
+  filter(conm == "CEMEX SAB DE CV", year == 2019) %>% 
+  count(isin)
+
 ```
+
+
 
