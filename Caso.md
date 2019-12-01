@@ -13,13 +13,13 @@ library(tidyverse)
 library(lubridate)
 ```
 
-Se importa la tabla "Compustat Global Daily"
+Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
 
 ```r
 global_daily <- read_csv("Compustat_Global_Daily.csv",
   col_types = cols(
-    sedol = "c",
-    datadate = "c"
+    sedol = col_character(), 
+    datadate = col_date(format = "%Y%m%d") 
   )
 )
 ```
@@ -27,31 +27,34 @@ global_daily <- read_csv("Compustat_Global_Daily.csv",
 Tipo de variable de cada columna
 
 ```r
-spec(global_daily)
+global_daily %>%
+  summarise_all(class) %>%
+  pivot_longer(everything(), names_to = "column", values_to = "type")
 ```
 
 ```
-## cols(
-##   gvkey = col_character(),
-##   iid = col_character(),
-##   datadate = col_character(),
-##   conm = col_character(),
-##   curcdd = col_character(),
-##   ajexdi = col_double(),
-##   cshoc = col_double(),
-##   cshtrd = col_double(),
-##   prccd = col_double(),
-##   prcstd = col_double(),
-##   qunit = col_double(),
-##   trfd = col_double(),
-##   exchg = col_double(),
-##   isin = col_character(),
-##   sedol = col_character(),
-##   fic = col_character(),
-##   monthend = col_double(),
-##   gsector = col_double(),
-##   sic = col_double()
-## )
+## # A tibble: 19 x 2
+##    column   type     
+##    <chr>    <chr>    
+##  1 gvkey    character
+##  2 iid      character
+##  3 datadate Date     
+##  4 conm     character
+##  5 curcdd   character
+##  6 ajexdi   numeric  
+##  7 cshoc    numeric  
+##  8 cshtrd   numeric  
+##  9 prccd    numeric  
+## 10 prcstd   numeric  
+## 11 qunit    numeric  
+## 12 trfd     numeric  
+## 13 exchg    numeric  
+## 14 isin     character
+## 15 sedol    character
+## 16 fic      character
+## 17 monthend numeric  
+## 18 gsector  numeric  
+## 19 sic      numeric
 ```
 
 Vista general
@@ -62,18 +65,18 @@ global_daily
 
 ```
 ## # A tibble: 784,102 x 19
-##    gvkey iid   datadate conm  curcdd ajexdi  cshoc cshtrd  prccd prcstd qunit
-##    <chr> <chr> <chr>    <chr> <chr>   <dbl>  <dbl>  <dbl>  <dbl>  <dbl> <dbl>
-##  1 0058~ 01W   19960918 IEM-~ MXN         1 1.65e7     NA   3.86     10     1
-##  2 0058~ 01W   19971111 IEM-~ MXN         1 1.65e7   2000   3.6      10     1
-##  3 0058~ 01W   19971128 IEM-~ MXN         1 1.65e7    109   3.6      10     1
-##  4 0107~ 01W   19860103 TUBO~ MXP         5 1.68e7     NA 320        10     1
-##  5 0107~ 01W   19860110 TUBO~ MXP         5 1.68e7     NA 320        10     1
-##  6 0107~ 01W   19860131 TUBO~ MXP         5 1.68e7     NA 320        10     1
-##  7 0107~ 01W   19860225 TUBO~ MXP         5 1.68e7     NA 320        10     1
-##  8 0107~ 01W   19860303 TUBO~ MXP         5 1.68e7     NA 310        10     1
-##  9 0107~ 01W   19860311 TUBO~ MXP         5 1.68e7     NA 310        10     1
-## 10 0107~ 01W   19860506 TUBO~ MXP         5 1.68e7     NA 310        10     1
+##    gvkey iid   datadate   conm  curcdd ajexdi  cshoc cshtrd  prccd prcstd qunit
+##    <chr> <chr> <date>     <chr> <chr>   <dbl>  <dbl>  <dbl>  <dbl>  <dbl> <dbl>
+##  1 0058~ 01W   1996-09-18 IEM-~ MXN         1 1.65e7     NA   3.86     10     1
+##  2 0058~ 01W   1997-11-11 IEM-~ MXN         1 1.65e7   2000   3.6      10     1
+##  3 0058~ 01W   1997-11-28 IEM-~ MXN         1 1.65e7    109   3.6      10     1
+##  4 0107~ 01W   1986-01-03 TUBO~ MXP         5 1.68e7     NA 320        10     1
+##  5 0107~ 01W   1986-01-10 TUBO~ MXP         5 1.68e7     NA 320        10     1
+##  6 0107~ 01W   1986-01-31 TUBO~ MXP         5 1.68e7     NA 320        10     1
+##  7 0107~ 01W   1986-02-25 TUBO~ MXP         5 1.68e7     NA 320        10     1
+##  8 0107~ 01W   1986-03-03 TUBO~ MXP         5 1.68e7     NA 310        10     1
+##  9 0107~ 01W   1986-03-11 TUBO~ MXP         5 1.68e7     NA 310        10     1
+## 10 0107~ 01W   1986-05-06 TUBO~ MXP         5 1.68e7     NA 310        10     1
 ## # ... with 784,092 more rows, and 8 more variables: trfd <dbl>, exchg <dbl>,
 ## #   isin <chr>, sedol <chr>, fic <chr>, monthend <dbl>, gsector <dbl>,
 ## #   sic <dbl>
@@ -267,10 +270,6 @@ global_daily %>%
 
 
 
-```r
-global_daily <- global_daily %>% 
-  mutate(date = parse_date(datadate, format = "%Y%m%d"))
-```
 
 
 ```r
@@ -296,8 +295,8 @@ global_daily %>%
 
 ```r
 global_daily %>% 
-  select(conm, date) %>% 
-  group_by(conm) %>% 
+  select(conm, datadate) %>% 
+  group_by(conm) %>%
   mutate(n = n()) %>% 
   filter(n == 1)
 ```
@@ -305,7 +304,7 @@ global_daily %>%
 ```
 ## # A tibble: 8 x 3
 ## # Groups:   conm [8]
-##   conm                        date           n
+##   conm                        datadate       n
 ##   <chr>                       <date>     <int>
 ## 1 TUBACERO SA                 1995-10-03     1
 ## 2 GRUPO FINANCIERO MEXIVAL SA 1995-12-07     1
@@ -320,14 +319,14 @@ global_daily %>%
 
 ```r
 global_daily %>% 
-  select(date) %>%
-  distinct(date) %>% 
-  arrange(date)
+  select(datadate) %>%
+  distinct(datadate) %>% 
+  arrange(datadate)
 ```
 
 ```
 ## # A tibble: 8,745 x 1
-##    date      
+##    datadate  
 ##    <date>    
 ##  1 1986-01-02
 ##  2 1986-01-03
@@ -345,8 +344,8 @@ global_daily %>%
 ```r
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, date, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
-  mutate(year = year(date)) %>% 
+  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
+  mutate(year = year(datadate)) %>% 
   group_by(year) %>% 
   summarise(n = n())
 ```
@@ -371,13 +370,13 @@ global_daily %>%
 ```r
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, date, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
-  arrange(date)
+  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
+  arrange(datadate)
 ```
 
 ```
 ## # A tibble: 16,815 x 7
-##    conm                  date           cshoc cshtrd prccd prcstd gsector
+##    conm                  datadate       cshoc cshtrd prccd prcstd gsector
 ##    <chr>                 <date>         <dbl>  <dbl> <dbl>  <dbl>   <dbl>
 ##  1 WAL MART DE MEXICO SA 1986-01-02 200905050     NA   470     10      30
 ##  2 WAL MART DE MEXICO SA 1986-01-03 200905050     NA   470     10      30
@@ -395,29 +394,29 @@ global_daily %>%
 ```r
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>%  
-  mutate(year = year(date)) %>% 
+  mutate(year = year(datadate)) %>% 
   filter(year == 1993) %>% 
-  arrange(date) %>% 
+  arrange(datadate) %>% 
   filter(curcdd == "MXN") 
 ```
 
 ```
-## # A tibble: 561 x 21
-##    gvkey iid   datadate conm  curcdd ajexdi  cshoc cshtrd prccd prcstd qunit
-##    <chr> <chr> <chr>    <chr> <chr>   <dbl>  <dbl>  <dbl> <dbl>  <dbl> <dbl>
-##  1 1051~ 01W   19930104 WAL ~ MXN      1.12 1.22e9     NA     7     10     1
-##  2 1051~ 02W   19930104 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
-##  3 1051~ 03W   19930104 WAL ~ MXN      1    8.00e8     NA     6     10     1
-##  4 1051~ 01W   19930105 WAL ~ MXN      1.12 1.22e9     NA     7     10     1
-##  5 1051~ 02W   19930105 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
-##  6 1051~ 03W   19930105 WAL ~ MXN      1    8.00e8     NA     6     10     1
-##  7 1051~ 02W   19930106 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
-##  8 1051~ 03W   19930106 WAL ~ MXN      1    8.00e8     NA     6     10     1
-##  9 1051~ 02W   19930107 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
-## 10 1051~ 03W   19930107 WAL ~ MXN      1    8.00e8     NA     6     10     1
-## # ... with 551 more rows, and 10 more variables: trfd <dbl>, exchg <dbl>,
+## # A tibble: 561 x 20
+##    gvkey iid   datadate   conm  curcdd ajexdi  cshoc cshtrd prccd prcstd qunit
+##    <chr> <chr> <date>     <chr> <chr>   <dbl>  <dbl>  <dbl> <dbl>  <dbl> <dbl>
+##  1 1051~ 01W   1993-01-04 WAL ~ MXN      1.12 1.22e9     NA     7     10     1
+##  2 1051~ 02W   1993-01-04 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
+##  3 1051~ 03W   1993-01-04 WAL ~ MXN      1    8.00e8     NA     6     10     1
+##  4 1051~ 01W   1993-01-05 WAL ~ MXN      1.12 1.22e9     NA     7     10     1
+##  5 1051~ 02W   1993-01-05 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
+##  6 1051~ 03W   1993-01-05 WAL ~ MXN      1    8.00e8     NA     6     10     1
+##  7 1051~ 02W   1993-01-06 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
+##  8 1051~ 03W   1993-01-06 WAL ~ MXN      1    8.00e8     NA     6     10     1
+##  9 1051~ 02W   1993-01-07 WAL ~ MXN      4.47 1.18e9     NA     7     10     1
+## 10 1051~ 03W   1993-01-07 WAL ~ MXN      1    8.00e8     NA     6     10     1
+## # ... with 551 more rows, and 9 more variables: trfd <dbl>, exchg <dbl>,
 ## #   isin <chr>, sedol <chr>, fic <chr>, monthend <dbl>, gsector <dbl>,
-## #   sic <dbl>, date <date>, year <dbl>
+## #   sic <dbl>, year <dbl>
 ```
 
 ```r
@@ -439,7 +438,7 @@ global_daily %>%
 
 ```r
 global_daily %>% 
-  mutate(year = year(date)) %>% 
+  mutate(year = year(datadate)) %>% 
   #filter(conm == "CEMEX SAB DE CV") %>%
   group_by(year, conm, isin) %>% 
   summarise(num = n())

@@ -88,36 +88,36 @@ global_daily %>%
   filter(n == 1)
 
 global_daily %>% 
-  select(conm, date) %>% 
-  group_by(conm) %>% 
+  select(conm, datadate) %>% 
+  group_by(conm) %>%
   mutate(n = n()) %>% 
   filter(n == 1)
 ```
 
 ```{r}
 global_daily %>% 
-  select(date) %>%
-  distinct(date) %>% 
-  arrange(date)
+  select(datadate) %>%
+  distinct(datadate) %>% 
+  arrange(datadate)
 ```
 ```{r}
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, date, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
-  mutate(year = year(date)) %>% 
+  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
+  mutate(year = year(datadate)) %>% 
   group_by(year) %>% 
   summarise(n = n())
 
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, date, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
-  arrange(date)
+  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
+  arrange(datadate)
 
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>%  
-  mutate(year = year(date)) %>% 
+  mutate(year = year(datadate)) %>% 
   filter(year == 1993) %>% 
-  arrange(date) %>% 
+  arrange(datadate) %>% 
   filter(curcdd == "MXN") 
 ```
 ```{r}
@@ -127,7 +127,7 @@ global_daily %>%
 
 ```{r}
 global_daily %>% 
-  mutate(year = year(date)) %>% 
+  mutate(year = year(datadate)) %>% 
   #filter(conm == "CEMEX SAB DE CV") %>%
   group_by(year, conm, isin) %>% 
   summarise(num = n())
