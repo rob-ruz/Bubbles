@@ -57,7 +57,7 @@ global_daily %>%
   summarise_all(n_distinct)
 ```
 
-Deberán llamarnos la atención que no hay correspondencia uno a uno entre conm y gvkey,
+Deberá llamarnos la atención que no hay correspondencia uno a uno entre `conm` y `gvkey`,
 por lo que suponemos que un `conm` tiene 2 `gvkey`, pues hay 292 `gvkey` y 291 `conm` Veamos...
 
 ```{r}
