@@ -30,10 +30,15 @@ global_daily %>%
   pivot_longer(everything(), names_to = "column", values_to = "type")
 ```
 
-Vista general
+
+## Exploratory analysis
+
+Iniciamos por ver cuantos valores distintos hay por cada columna
 ```{r}
-global_daily
+global_daily %>% 
+  summarise_all(n_distinct)
 ```
+
 
 ```{r}
 global_daily %>% 
@@ -43,18 +48,14 @@ observaciones de cada compañía
 ```{r}
 global_daily %>% 
   count(conm) %>% 
-  arrange(conm)
+  arrange(n)
 
 global_daily %>% 
   count(conm) %>% 
   arrange(desc(n))
 ```
 
-```{r}
-global_daily %>% 
-  filter(curcdd == "EUR") %>% 
-  count(conm)
-```
+
 
 
 ```{r}
