@@ -174,20 +174,3 @@ global_daily %>%
   filter(curcdd == "MXN") 
 ```
 
-
-```{r}
-global_daily %>% 
-  mutate(year = year(datadate)) %>% 
-  filter(conm == "CEMEX SAB DE CV", year == 2019) %>% 
-  arrange(datadate)
-
-global_daily %>% 
-  mutate(year = year(datadate)) %>% 
-  filter(conm == "CEMEX SAB DE CV", year == 2019) %>% 
-  count(isin)
-
-```
-
-
-
-
