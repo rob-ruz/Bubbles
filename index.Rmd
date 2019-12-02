@@ -109,7 +109,9 @@ global_daily %>%
 
 Siguiendo con el análisis... Vemos que hay cinco diferentes monedas `curcdd`y cinco diferentes
 mercados `exchg`. 
-Donde el código 208 corresponde a la bolsa mexicana
+Donde el código 208 corresponde a la bolsa mexicana y que tiene 708,038 que coinciden con 
+la suma de los registros con las monedas MXP, MXN y los NA.
+Así que todos los registros que no sean `exchg = 208 ` son candidatos a eliminación
 
 ```{r}
 global_daily %>% 
@@ -117,6 +119,12 @@ global_daily %>%
 
 global_daily %>% 
   count(exchg)
+
+global_daily %>%
+  count(curcdd) %>%
+  filter(curcdd == "MXN" | curcdd == "MXP" | is.na(curcdd)) %>%
+  summarise(sum(n)) %>%
+  pull()
 ```
 observaciones de cada compañía
 ```{r}

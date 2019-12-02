@@ -395,7 +395,7 @@ library(rvest)</code></pre>
 </div>
 <p><strong>¡¿Qué hacemos?!</strong> ¿Quitamos los 1,645 registros de gvkey 315924?</p>
 <hr />
-<p>Siguiendo con el análisis… Vemos que hay cinco diferentes monedas <code>curcdd</code>y cinco diferentes mercados <code>exchg</code>. Donde el código 208 corresponde a la bolsa mexicana</p>
+<p>Siguiendo con el análisis… Vemos que hay cinco diferentes monedas <code>curcdd</code>y cinco diferentes mercados <code>exchg</code>. Donde el código 208 corresponde a la bolsa mexicana y que tiene 708,038 que coinciden con la suma de los registros con las monedas MXP, MXN y los NA. Así que todos los registros que no sean <code>exchg = 208</code> son candidatos a eliminación</p>
 <pre class="r"><code>global_daily %&gt;% 
   count(curcdd) </code></pre>
 <div data-pagedtable="false">
@@ -410,6 +410,12 @@ library(rvest)</code></pre>
 {"columns":[{"label":["exchg"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[2],"type":["int"],"align":["right"]}],"data":[{"1":"115","2":"1510"},{"1":"154","2":"61875"},{"1":"208","2":"708038"},{"1":"212","2":"5949"},{"1":"257","2":"6730"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
+<pre class="r"><code>global_daily %&gt;%
+  count(curcdd) %&gt;%
+  filter(curcdd == &quot;MXN&quot; | curcdd == &quot;MXP&quot; | is.na(curcdd)) %&gt;%
+  summarise(sum(n)) %&gt;%
+  pull()</code></pre>
+<pre><code>## [1] 708038</code></pre>
 <p>observaciones de cada compañía</p>
 <pre class="r"><code>global_daily %&gt;% 
   count(conm) %&gt;% 
