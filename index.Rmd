@@ -54,7 +54,7 @@ Podemos notar que tenemos una tablas con `r dim(global_daily)[1]` filas y
 ¿Cuántos valores distintos hay por cada columna? y ¿ Cuántos `NA` hay en cada columna?
 ```{r}
 global_daily %>% 
-  summarise_all(n_distinct, is.na)
+  summarise_all(n_distinct)
 
 global_daily %>%
   summarise_all(~ sum(is.na(.x)))
