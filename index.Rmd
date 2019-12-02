@@ -99,7 +99,7 @@ al 2019.
 global_daily %>% 
   mutate(year = year(datadate)) %>% 
   filter(conm == "NACIONAL FINANCIERA SNC", year == 2019) %>% 
-  select(gvkey, datadate, conm) %>% 
+  select(gvkey, datadate, conm, ) %>% 
   arrange(datadate)
 
 ```
@@ -155,6 +155,14 @@ global_daily %>%
 ```
 
 
+
+¿Cuántas empresas hay por sector?
+```{r}
+global_daily %>% 
+  group_by(gics_name) %>% 
+  summarise(n = n_distinct(conm))
+```
+
 ```{r}
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
@@ -163,22 +171,10 @@ global_daily %>%
   summarise(n = n())
 
 global_daily %>% 
-  filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
-  arrange(datadate)
-
-global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>%  
   mutate(year = year(datadate)) %>% 
   filter(year == 1993) %>% 
   arrange(datadate) %>% 
-  filter(curcdd == "MXN") 
-```
-
-¿Cuántas empresas hay por sector?
-```{r}
-global_daily %>% 
-  group_by(gics_name) %>% 
-  summarise(n = n_distinct(conm))
+  select(gvkey, datadate, conm, ajexdi, cshoc, prccd, prcstd, isin)
 ```
 
