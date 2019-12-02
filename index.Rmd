@@ -33,6 +33,7 @@ gics_table <- read_html("https://en.wikipedia.org/wiki/Global_Industry_Classific
   distinct(gsector = Sector...1, gics_name = Sector...2)
 ```
 
+
 Se le añaden los nombres de los sectores a la tabla original
 ```{r}
 global_daily <- left_join(global_daily, gics_table, by = "gsector")
@@ -98,6 +99,7 @@ al 2019.
 global_daily %>% 
   mutate(year = year(datadate)) %>% 
   filter(conm == "NACIONAL FINANCIERA SNC", year == 2019) %>% 
+  select(gvkey, datadate, conm) %>% 
   arrange(datadate)
 
 ```
