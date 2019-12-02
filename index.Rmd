@@ -51,10 +51,14 @@ global_daily %>%
 Podemos notar que tenemos una tablas con `r dim(global_daily)[1]` filas y 
 `r dim(global_daily)[2]` columnas.
   
-¿Cuántos valores distintos hay por cada columna?
+¿Cuántos valores distintos hay por cada columna? y ¿ Cuántos `NA` hay en cada columna?
 ```{r}
 global_daily %>% 
-  summarise_all(n_distinct)
+  summarise_all(n_distinct, is.na)
+
+global_daily %>%
+  summarise_all(~ sum(is.na(.x)))
+
 ```
 
 Deberá llamarnos la atención que no hay correspondencia uno a uno entre `conm` y `gvkey`,
@@ -103,9 +107,16 @@ global_daily %>%
 
 ***
 
+Siguiendo con el análisis... Vemos que hay cinco diferentes monedas `curcdd`y cinco diferentes
+mercados `exchg`. 
+Donde el código 208 corresponde a la bolsa mexicana
+
 ```{r}
 global_daily %>% 
   count(curcdd) 
+
+global_daily %>% 
+  count(exchg)
 ```
 observaciones de cada compañía
 ```{r}
@@ -126,23 +137,6 @@ global_daily %>%
   filter(is.na(qunit)) %>% 
   count(conm)
 ```
-
-
-```{r}
-global_daily %>% 
-  count(gsector)
-```
-industries
-```{r}
-global_daily %>%
-  group_by(conm) %>% 
-  count(sic) %>% 
-  arrange(sic)
-
-global_daily %>% 
-  count(sic)
-```
-
 
 
 
@@ -185,10 +179,7 @@ global_daily %>%
   arrange(datadate) %>% 
   filter(curcdd == "MXN") 
 ```
-```{r}
-global_daily %>% 
-  count(exchg)
-```
+
 
 ```{r}
 global_daily %>% 
