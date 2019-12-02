@@ -133,20 +133,9 @@ observaciones de cada compañía
 global_daily %>% 
   count(conm) %>% 
   arrange(n)
-
-global_daily %>% 
-  count(conm) %>% 
-  arrange(desc(n))
 ```
 
 
-
-
-```{r}
-global_daily %>% 
-  filter(is.na(qunit)) %>% 
-  count(conm)
-```
 
 
 
@@ -163,12 +152,7 @@ global_daily %>%
   filter(n == 1)
 ```
 
-```{r}
-global_daily %>% 
-  select(datadate) %>%
-  distinct(datadate) %>% 
-  arrange(datadate)
-```
+
 ```{r}
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
