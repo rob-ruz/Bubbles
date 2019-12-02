@@ -156,7 +156,6 @@ global_daily %>%
 ```{r}
 global_daily %>% 
   filter(conm == "WAL MART DE MEXICO SA") %>% 
-  select(conm, datadate, cshoc, cshtrd, prccd, prcstd, gsector) %>% 
   mutate(year = year(datadate)) %>% 
   group_by(year) %>% 
   summarise(n = n())
@@ -172,5 +171,12 @@ global_daily %>%
   filter(year == 1993) %>% 
   arrange(datadate) %>% 
   filter(curcdd == "MXN") 
+```
+
+¿Cuántas empresas hay por sector?
+```{r}
+global_daily %>% 
+  group_by(gics_name) %>% 
+  summarise(n = n_distinct(conm))
 ```
 
