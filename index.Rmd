@@ -126,6 +126,8 @@ global_daily %>%
   summarise(sum(n)) %>%
   pull()
 ```
+***
+
 observaciones de cada compañía
 ```{r}
 global_daily %>% 
