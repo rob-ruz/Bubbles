@@ -223,6 +223,18 @@ global_daily1 %>%
   count(curcdd)
 ```
 
+```{r}
+global_daily1 %>% 
+  filter(is.na(curcdd)) 
+```
+
+```{r}
+global_daily1 %>% 
+  mutate(year = year(datadate)) %>% 
+  filter(conm == "CIBANCO SA", year == 2018)
+```
+
+***
 Todas las empresas que tienen alguna fecha duplicada
 
 ```{r}
