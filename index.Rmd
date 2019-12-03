@@ -205,6 +205,8 @@ global_daily1 %>%
   count(isin)
 ```
 
+Todas las empresas que tienen alguna fecha duplicada
+
 ```{r}
 duplic <- global_daily1 %>% 
   group_by(datadate, conm) %>% 
@@ -215,14 +217,26 @@ filt_dup <- duplic %>%
   mutate(dummy = paste(as.character(datadate),conm)) %>% 
   pull(dummy)
 
-comp <- unique(duplic$conm)
-fechas <- unique(duplic$datadate)
-
-global_daily1 %>% 
-  mutate(dummy = paste(as.character(datadate),conm)) %>% 
-  filter(dummy %in% filt_dup) %>% 
-  arrange(datadate) %>% 
+dups <- global_daily1 %>%
+  mutate(dummy = paste(as.character(datadate), conm)) %>%
+  filter(dummy %in% filt_dup) %>%
+  arrange(datadate) %>%
   select(-dummy)
 
+dups 
+```
+¿Cuántas empresas diferentes tienen duplicados?
+
+```{r}
+length(unique(dups$conm))
+```
+
+
+
+```{r}
+global_daily1 %>%
+  filter(conm == "TUBOS DE ACERO DE MEXICO") %>% 
+  group_by(curcdd) %>% 
+  summarise(min = min(datadate), max = max(datadate))
 ```
 
