@@ -39,6 +39,12 @@ Se le añaden los nombres de los sectores a la tabla original
 global_daily <- left_join(global_daily, gics_table, by = "gsector")
 ```
 
+```{r}
+global_daily <- global_daily %>% 
+  arrange(datadate) %>% 
+  mutate(id = row_number())
+```
+
 Tipo de variable de cada columna
 ```{r}
 global_daily %>%
@@ -181,39 +187,49 @@ global_daily %>%
 ***
 
 ```{r}
+# Se eliminan los registros que no correspondan al código de mercado de la BMV, así
+# como el registro restante en USD 
 global_daily1 <- global_daily %>% 
-  filter(exchg == 208)
+  filter(exchg == 208, !curcdd %in% "USD")
 
+# Solo quedan registros en MXP, MXN y NA
 global_daily1 %>% 
   count(curcdd)
 
-global_daily1 %>% 
-  filter(curcdd == "USD")
-
-global_daily1 %>% 
+# Se procede a ver cuales son los registros que tiene NA es moneda
+curcdd_na <- global_daily1 %>% 
   filter(is.na(curcdd)) %>% 
-  arrange(datadate)
+  arrange(datadate) %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>% 
+  pull(dummy)
+
+rep_curr <- global_daily1 %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>% 
+  filter(dummy %in% curcdd_na) %>% 
+  arrange(datadate) %>% 
+  filter(curcdd == "MXN") %>% 
+  pull(dummy)
+
+filter_out <-  global_daily1 %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>% 
+  filter(dummy %in% rep_curr & is.na(curcdd)) %>% 
+  arrange(datadate) %>% 
+  pull(id)
+
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% filter_out)
 
 global_daily1 %>% 
-  filter(conm == "INDUSTRIAS PENOLES SAB DE CV", datadate == "2004-04-16")
-
-global_daily1 %>% 
-  filter(conm == "CEMEX SAB DE CV", datadate == "2019-06-13")
-
-global_daily1 %>% 
-  filter(conm == "CEMEX SAB DE CV") %>% 
-  count(isin)
+  count(curcdd)
 ```
 
 Todas las empresas que tienen alguna fecha duplicada
 
 ```{r}
-duplic <- global_daily1 %>% 
+filt_dup <- global_daily1 %>% 
   group_by(datadate, conm) %>% 
   count(datadate) %>% 
-  filter(n > 1) 
-
-filt_dup <- duplic %>% 
+  filter(n > 1)  %>% 
   mutate(dummy = paste(as.character(datadate),conm)) %>% 
   pull(dummy)
 
@@ -231,12 +247,4 @@ dups
 length(unique(dups$conm))
 ```
 
-
-
-```{r}
-global_daily1 %>%
-  filter(conm == "TUBOS DE ACERO DE MEXICO") %>% 
-  group_by(curcdd) %>% 
-  summarise(min = min(datadate), max = max(datadate))
-```
 
