@@ -309,7 +309,19 @@ dups %>%
 
 
 ```{r}
-dups %>% 
+dups <- dups %>% 
   mutate(mv = cshoc * prccd)
+
+dups
+```
+
+```{r}
+dups %>% 
+  group_by(datadate, conm) %>% 
+  count() 
+
+dups %>% 
+  group_by(datadate, conm) %>% 
+  mutate(rank = rank(-mv))
 ```
 
