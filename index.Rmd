@@ -185,7 +185,7 @@ global_daily %>%
 ```
 
 ***
-
+## Se comienza a limpiar
 ```{r}
 # Se eliminan los registros que no correspondan al código de mercado de la BMV, así
 # como el registro restante en USD 
@@ -221,18 +221,23 @@ global_daily1 <- global_daily1 %>%
 
 global_daily1 %>% 
   count(curcdd)
+
+elim <- global_daily1 %>% 
+  filter(is.na(curcdd)) %>% 
+  pull(id)
+
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% elim)
 ```
 
-```{r}
-global_daily1 %>% 
-  filter(is.na(curcdd)) 
-```
+
 
 ```{r}
-global_daily1 %>% 
-  mutate(year = year(datadate)) %>% 
-  filter(conm == "CIBANCO SA", year == 2018)
+global_daily1 %>%
+  summarise_all(~ sum(is.na(.x)))
 ```
+
+
 
 ***
 Todas las empresas que tienen alguna fecha duplicada
