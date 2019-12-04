@@ -262,6 +262,54 @@ dups
 
 ```{r}
 length(unique(dups$conm))
+unique(dups$conm)
 ```
 
+
+```{r}
+
+cshoc_na <- dups %>% 
+  filter(is.na(cshoc)) %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>% 
+  pull(dummy)
+
+dups %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>%
+  filter(dummy %in% cshoc_na) 
+
+dups %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>%
+  filter(dummy %in% cshoc_na) %>%  
+  group_by(datadate, conm) %>% 
+  summarise(sin_na = sum(!is.na(cshoc)), con_na = sum(is.na(cshoc))) 
+
+elim2 <- dups %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>%
+  filter(dummy %in% cshoc_na, is.na(cshoc)) %>% 
+  pull(id)
+ 
+
+```
+
+```{r}
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% elim2)
+```
+```{r}
+dups <- global_daily1 %>%
+  mutate(dummy = paste(as.character(datadate), conm)) %>%
+  filter(dummy %in% filt_dup) %>%
+  arrange(datadate) %>%
+  select(-dummy)
+
+dups %>% 
+  summarise_all(~ sum(is.na(.x)))
+
+```
+
+
+```{r}
+dups %>% 
+  mutate(mv = cshoc * prccd)
+```
 
