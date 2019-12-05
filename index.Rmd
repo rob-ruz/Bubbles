@@ -320,8 +320,24 @@ dups %>%
   group_by(datadate, conm) %>% 
   count() 
 
-dups %>% 
+dups <- dups %>% 
   group_by(datadate, conm) %>% 
-  mutate(rank = rank(-mv))
+  mutate(rank = rank(-mv)) # %>% 
+  #filter(rank > 1.5)
+
+elim3 <- dups %>% 
+  filter(rank > 1.5) %>% 
+  pull(id)
+
+dups %>% 
+  filter(!id %in% elim3) %>% 
+  count(datadate, conm)
+
+# global_daily1 <- global_daily1 %>% 
+#  filter(!id %in% elim3)
+
+# Actulizar los duplicados
+
 ```
+
 
