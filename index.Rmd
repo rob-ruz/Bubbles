@@ -311,5 +311,58 @@ dups <- dups %>%
 dups
 
 ```
+```{r}
+dups %>% 
+  count(datadate,conm)
 
+dups %>% 
+ summarise(na = sum(is.na(isin)), not_na = sum(!is.na(isin)))
+
+elim4 <- dups %>% 
+  filter(is.na(isin)) %>% 
+  pull(id)
+
+#### Checkpoint
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% elim4)
+####
+
+
+#Actualiza dups
+
+vec_dups <- dups %>% 
+ summarise(na = sum(is.na(isin)), not_na = sum(!is.na(isin))) %>% 
+  filter(na == 0) %>% 
+  mutate(dummy = paste(as.character(datadate), conm)) %>% 
+  pull(dummy)
+
+dups <- dups %>% 
+  filter(dummy %in% vec_dups)
+
+dups
+```
+
+```{r}
+global_daily1 %>% 
+  group_by(datadate, conm) %>% 
+  count(datadate) %>% 
+  filter(n > 1) 
+
+
+global_daily1 %>%
+  summarise_all(~ sum(is.na(.x)))
+
+global_daily1 %>% 
+  count(conm) %>% 
+  arrange(n)
+
+```
+
+```{r}
+global_daily1 %>% 
+  mutate(year = year(datadate)) %>% 
+  group_by(conm, year) %>% 
+  summarise(n = n()) %>% 
+  spread(year, n)
+```
 
