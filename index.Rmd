@@ -366,3 +366,40 @@ global_daily1 %>%
   spread(year, n)
 ```
 
+```{r}
+dups
+```
+```{r}
+dups %>% 
+  mutate(adj_prc = (prccd/ajexdi)*trfd)
+```
+
+```{r}
+global_daily1 %>% 
+    filter(conm == "GRUPO ELEKTRA SA DE CV", datadate == "1996-01-22")
+```
+```{r}
+global_daily1 %>% 
+  filter(conm == "GRUPO ELEKTRA SA DE CV") %>% 
+  count(isin)
+# Es claro que hay qi
+```
+
+```{r}
+dups %>% 
+  group_by(conm) %>% 
+  count(isin)
+```
+```{r}
+global_daily1 %>% 
+  filter(conm == "GRUPO ELEKTRA SA DE CV")
+```
+
+
+
+```{r}
+global_daily1 %>% 
+  filter(conm == "CYDSA SA") %>% 
+  count(isin)
+```
+
