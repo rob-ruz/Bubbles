@@ -11,6 +11,7 @@ output:
 library(tidyverse)
 library(lubridate)
 library(rvest)
+library(janitor)
 ```
 
 Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
@@ -88,7 +89,7 @@ global_daily %>%
   group_by(gvkey) %>% 
   summarise(n = n(), prim_ap = min(datadate), ult_ap = max(datadate))
 ```
-Lo que nos hace suponer que desde agosto de 2018 coexisten los dos `gvkey`, por lo que
+Lo que nos hace suponer que desde agosto de 2013 coexisten los dos `gvkey`, por lo que
 tendría que haber más de un registro por día
 ```{r}
 global_daily %>% 
@@ -101,16 +102,22 @@ global_daily %>%
 Efectivamente cada día hay dos registros cada uno con diferente `gvkey`. Tomemos de muestra
 al 2019.
 ```{r}
-
-global_daily %>% 
-  mutate(year = year(datadate)) %>% 
-  filter(conm == "NACIONAL FINANCIERA SNC", year == 2019) %>% 
-  arrange(datadate)
-
+global_daily %>%
+  filter(
+    conm == "NACIONAL FINANCIERA SNC",
+    datadate >= "2013-08-07",
+    datadate <= "2019-11-26"
+  ) %>%
+  mutate(mv = cshoc * prccd) %>% #Creamos la mv para quedarnos con la de mayor valor
+  group_by(datadate, conm) %>% 
+  mutate(rank = rank(-mv)) # Creamos el ranking de mayor a menor 
+# Veremos que los que tienen el que gvkey que aparece menos veces son también los 
+# que los que tienen menor mv, así que más adelante los eliminaremos.
 ```
 
 **¡¿Qué hacemos?!** 
 ¿Quitamos los 1,645 registros de gvkey 315924?
+**Respuesta:** Hay que quitarlos...
 
 ***
 
@@ -130,8 +137,7 @@ global_daily %>%
 global_daily %>%
   count(curcdd) %>%
   filter(curcdd == "MXN" | curcdd == "MXP" | is.na(curcdd)) %>%
-  summarise(sum(n)) %>%
-  pull()
+  summarise(not_eur_usd = sum(n))
 ```
 ***
 
@@ -141,18 +147,17 @@ global_daily %>%
   count(conm) %>% 
   arrange(n)
 
-# Emisoras con solo una observación
+# Emisoras con solo una observación y en que fecha aparece
 global_daily %>% 
-  select(conm, datadate) %>% 
   group_by(conm) %>%
-  mutate(n = n()) %>% 
+  mutate(n = n()) %>%  
   filter(n == 1)
 ```
 
-
-
 ¿Cuántas empresas hay por sector?
 ```{r}
+# Temporalmente se usa el gsector... Que luego sabremos que en este caso es impreciso
+# y tomaremos una categorización diferente
 global_daily %>% 
   group_by(gics_name) %>% 
   summarise(n = n_distinct(conm))
@@ -160,10 +165,12 @@ global_daily %>%
 
 ***
 
-# Se comienza a limpiar
+## Se comienza a limpiar
 ```{r}
 # Se eliminan los registros que no correspondan al código de mercado de la BMV, así
 # como el registro restante en USD 
+
+# CHECKPOINT
 global_daily1 <- global_daily %>% 
   filter(exchg == 208, !curcdd %in% "USD")
 
@@ -172,41 +179,50 @@ global_daily1 %>%
   count(curcdd)
 
 # Se procede a ver cuales son los registros que tiene NA en moneda, se selecciona
-# la fecha y emisora con el fin de ver si se tiene algún repetido que sí tenga moneda,
+# el conjunto } fecha/emisora con el fin de ver si se tiene algún repetido que sí tenga moneda,
 # para poder eliminar el que aparezca sin moneda
+# 515 registros que no traen moneda
 curcdd_na <- global_daily1 %>% 
   filter(is.na(curcdd)) %>% 
   mutate(dummy = paste(as.character(datadate), conm)) %>% 
   pull(dummy)
 
-# Se selecciona los registros que tienen moneda y tienen un repetido sin moneda
+# Se selecciona los registros que sí tienen moneda y tienen un repetido sin moneda
+# Se busca si alguno de los 515 registros que no tren moneda tiene algún registro de
+# idéntica fecha y nombre pero que sí traiga moneda (un gemelo bueno)
 rep_curr <- global_daily1 %>% 
   mutate(dummy = paste(as.character(datadate), conm)) %>% 
   filter(dummy %in% curcdd_na) %>% 
-  filter(curcdd == "MXN") %>% 
+  filter(curcdd == "MXN") %>%  # 151 **istintos** conjuntos dadtadate/conm 
   pull(dummy)
 
+# Se busca en toda la base esos 151 registros, para encontrar para esa fecha y
+# compañía todos los registros (con y sin moneda) y se filtran los que no tienen moneda
 filter_out <-  global_daily1 %>% 
   mutate(dummy = paste(as.character(datadate), conm)) %>% 
   filter(dummy %in% rep_curr & is.na(curcdd)) %>% 
   pull(id)
 
+### CHECKPOINT
 global_daily1 <- global_daily1 %>% 
   filter(!id %in% filter_out)
 # ---
 
-# ¿Cuantos NA quedan?
+# ¿Cuantos NA en moneda quedan? Esos no los quitamos todavía pues no tienen un gemelo
+# bueno
 global_daily1 %>% 
   count(curcdd)
-
-
+```
+```{r}
 # Puesto que los que restan con NA en curcdd también tienen NA en varias columnas más
 # procedo a eliminarlas
+global_daily1 %>%
+  summarise_all(~ sum(is.na(.x)))
 
+## CHECKPOINT
 global_daily1 <- global_daily1 %>% 
   filter(!is.na(curcdd))
 ```
-# eliminar del global environment elim
 
 ```{r}
 # Como se ha progresado con repecto a los NA
@@ -232,7 +248,7 @@ dups <- global_daily1 %>%
   mutate(dummy = paste(as.character(datadate), conm)) %>%
   filter(dummy %in% filt_dup)
 
-dups 
+dups
 ```
 ¿Cuántas empresas diferentes tienen duplicados y cuáles son?
 ```{r}
@@ -256,6 +272,7 @@ dups %>%
 
 # Se ve que todos los registros tienen alguno igual pero sin na en cshoc, entonces se
 # pueden eliminar los que tienen na
+# Todos tienen al menos un gemelo bueno, entonces podemos eliminar al gemelo malo
 dups %>% 
   filter(dummy %in% cshoc_na) %>%  
   group_by(datadate, conm) %>% 
@@ -264,21 +281,24 @@ dups %>%
 elim2 <- dups %>% 
   filter(dummy %in% cshoc_na, is.na(cshoc)) %>% 
   pull(id)
- 
+
+
+## CHECKPOINT 
 global_daily1 <- global_daily1 %>% 
   filter(!id %in% elim2)
 
-# Se actualiza el datafrane
+# Se actualiza el datafrane de duplicados
 dups <- dups %>% 
   filter(!id %in% elim2)
 
+# Ya noy hay na en cshoc en el dataframe de duplicados
 dups %>% 
   summarise_all(~ sum(is.na(.x)))
 
 ```
-
-
 ```{r}
+# Creamos la nueva variable con la cual decidiremos con que registro quedarnos de los
+# que estén duplicados
 dups <- dups %>% 
   mutate(mv = cshoc * prccd)
 
@@ -290,10 +310,16 @@ dups %>%
   group_by(datadate, conm) %>% 
   count() 
 
+dups %>% 
+  group_by(conm) %>% 
+  count() 
+
+
 dups <- dups %>% 
   group_by(datadate, conm) %>% 
   mutate(rank = rank(-mv)) # %>% 
   #filter(rank > 1.5)
+dups
 
 elim3 <- dups %>% 
   filter(rank > 1.5) %>% 
@@ -309,7 +335,6 @@ global_daily1 <- global_daily1 %>%
 dups <- dups %>% 
   filter(rank == 1.5)  # será fácil quitar los que no tengan isin
 dups
-
 ```
 ```{r}
 dups %>% 
@@ -343,22 +368,46 @@ dups
 ```
 
 ```{r}
-global_daily1 %>% 
-  group_by(datadate, conm) %>% 
-  count(datadate) %>% 
-  filter(n > 1) 
+# De estas dos empresas que quedan en duplicados, vemos que una de las variables por las que 
+# se diferencian es el isin, así que eliminaremos los registros que tengan el isin con menos
+# repeticines en toda la base
+global_daily %>%
+  filter(conm == "GRUPO ELEKTRA SA DE CV" | conm == "CYDSA SA") %>%
+  group_by(conm, isin) %>%
+  count()
 
+dups %>%
+  group_by(conm, isin) %>%
+  count()
+```
 
-global_daily1 %>%
-  summarise_all(~ sum(is.na(.x)))
+```{r}
+isin_elim <- global_daily %>%
+  filter(conm == "GRUPO ELEKTRA SA DE CV" | conm == "CYDSA SA") %>%
+  group_by(conm, isin) %>%
+  count() %>% 
+  ungroup() %>% 
+  top_n(-2, n) %>% 
+  pull(isin)
 
+## CHECKPOINT
+elim5 <- dups %>% 
+  filter(isin %in% isin_elim) %>% 
+  pull(id)
+
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% elim5)
+####
+
+# Ya no existen duplicados de una misma empresa con fechas repetidas en la base
+dups <- get_dupes(global_daily1, datadate, conm)
+```
+
+```{r}
 global_daily1 %>% 
   count(conm) %>% 
   arrange(n)
 
-```
-
-```{r}
 global_daily1 %>% 
   mutate(year = year(datadate)) %>% 
   group_by(conm, year) %>% 
@@ -367,39 +416,34 @@ global_daily1 %>%
 ```
 
 ```{r}
-dups
-```
-```{r}
-dups %>% 
-  mutate(adj_prc = (prccd/ajexdi)*trfd)
+global_daily1 %>%
+  summarise_all(~ sum(is.na(.x)))
 ```
 
+```{r}
+## CHECKPOINT
+# Se eliminaran por este momento aquellas empresas que tengan menos de 60 registros
+
+conm_men60 <- global_daily1 %>% 
+  count(conm) %>% 
+  arrange(n) %>% 
+  filter(n < 60) %>% 
+  pull(conm)
+
+elim6 <- global_daily1 %>% 
+  filter(conm %in% conm_men60) %>% 
+  pull(id)
+
+## CHECKPOINT
+global_daily1 <- global_daily1 %>% 
+  filter(!id %in% elim6)
+```
+
+
+## Veamos la cuestión de los sectores
 ```{r}
 global_daily1 %>% 
-    filter(conm == "GRUPO ELEKTRA SA DE CV", datadate == "1996-01-22")
-```
-```{r}
-global_daily1 %>% 
-  filter(conm == "GRUPO ELEKTRA SA DE CV") %>% 
-  count(isin)
-# Es claro que hay qi
+  distinct(conm, gics_name)
 ```
 
-```{r}
-dups %>% 
-  group_by(conm) %>% 
-  count(isin)
-```
-```{r}
-global_daily1 %>% 
-  filter(conm == "GRUPO ELEKTRA SA DE CV")
-```
-
-
-
-```{r}
-global_daily1 %>% 
-  filter(conm == "CYDSA SA") %>% 
-  count(isin)
-```
 
