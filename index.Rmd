@@ -476,3 +476,6 @@ global_daily1 %>%
   spread(year, n)
 ```
 ## Siguiente paso: crear la variable de los percios
+
+
+Esta es otra prueba. Es para recordar lo que ya hicimos.
