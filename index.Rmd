@@ -446,5 +446,33 @@ global_daily1 %>%
   distinct(conm, gics_name)
 ```
 
-Estamos haciendo una prueba para actualizar el Rmd en el respositorio de Rober.
-Segundo intento.
+global_daily1 %>% 
+  mutate(year = year(datadate)) %>% 
+  group_by(conm, year) %>% 
+  summarise(n = sum(monthend)) %>% 
+  spread(year, n)
+```{r}
+
+global_daily1 %>% 
+  filter(monthend == 1) %>% 
+  select(datadate, conm, monthend) %>% 
+  mutate(dia = day(datadate)) %>% 
+  filter(dia >= 5 & dia < 25)
+
+
+global_daily1 %>%
+  mutate(mes = month(datadate), year = year(datadate)) %>%
+  filter(
+    conm == "INDUSTRIAS NACOBRE SA DE CV",
+    year == 1988 | year == 1987
+    #mes == 1 | mes == 2
+  ) %>% 
+  select(datadate, conm, monthend)
+
+global_daily1 %>% 
+  mutate(year = year(datadate)) %>% 
+  group_by(gics_name, year) %>%
+  summarise(n = n_distinct(conm)) %>% 
+  spread(year, n)
+```
+## Siguiente paso: crear la variable de los percios
