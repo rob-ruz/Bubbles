@@ -479,3 +479,6 @@ global_daily1 %>%
 
 
 Esta es otra prueba. Es para recordar lo que ya hicimos.
+
+
+## A comer ya ¿no?
