@@ -446,4 +446,5 @@ global_daily1 %>%
   distinct(conm, gics_name)
 ```
 
-
+Estamos haciendo una prueba para actualizar el Rmd en el respositorio de Rober.
+Segundo intento.
