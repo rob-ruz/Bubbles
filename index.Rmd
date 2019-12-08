@@ -491,5 +491,4 @@ Y esta es la tercera.
 
 
 Prueba 5.
-Otra opción para no aceptar todos los cambios.
 Una tercera fila de datos.
