@@ -1,4 +1,4 @@
---
+---
 title: "Caso"
 author: "Roberto Ruz Campos"
 date: "30/11/2019"
@@ -69,11 +69,11 @@ DatosMX01 <- DatosMX01 %>%
   filter(!curcdd %in% "USD")
 
 # Generamos un data frame para revisar las características de los registros que en el campo "curcdd" tienen "NA".
-DatosMX_curcddNA <- DatosMX01 %>%
+DatosMX01 %>%
   filter(is.na(curcdd))  
 
 # Generamos una tabla de resumen para identificar si estos registros tienen información de precios.
-DatosMX_curcddNA %>%
+DatosMX01 %>%
   summarise_all(~ sum(is.na(.)))
 
 # El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.
@@ -86,8 +86,6 @@ DatosMX01 %>%
   group_by(exchg) %>%
   count(curcdd)
 
-# Eliminamo el data frame "DatosMX_curcddNA".
-rm(DatosMX_curcddNA)
 ```
 
 ## Duplicidad de fechas
@@ -112,7 +110,7 @@ DatosMX01 %>%
   ) 
 
 # Puede comprobarse que hay más gvkey_iid que isin
-DatosMX_gvkey_isin %>%
+DatosMX01 %>%
   summarise_all(n_distinct)
 ```
 
@@ -149,7 +147,7 @@ DatosMX01 %>%
 #No se identificaron precios negativos. 
 # Vemos que si hay registros con "NA" en el campo "prccd".
 DatosMX01 %>%
-  summarise(sum(is.na(prccd)))
+  summarise(prcdd_na = sum(is.na(prccd)))
 #No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
 
 # Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
@@ -161,6 +159,16 @@ DatosMX01 <- DatosMX01 %>%
     Precio = (prccd / ajexdi) * trfd,
     Size = prccd * cshoc / 1000000
   )
+
+
+sectores <- read_xlsx(
+  path = "Sectores_GICS_BMV.xlsx",
+  sheet = "Sectores",
+  range = "A1:E261",
+  col_names = TRUE,
+  col_types = c("text")
+)
+
 ```
 
 ## Selección por Valor de Mercado.
