@@ -39,13 +39,6 @@ Se le añaden los nombres de los sectores a la tabla original
 global_daily <- left_join(global_daily, gics_table, by = "gsector")
 ```
 
-Se añade una variable para identicar de manera única a cada registro.
-```{r}
-global_daily <- global_daily %>% 
-  arrange(datadate) %>% 
-  mutate(id = row_number())
-```
-
 Tipo de variable de cada columna
 ```{r}
 global_daily %>%
@@ -53,434 +46,136 @@ global_daily %>%
   pivot_longer(everything(), names_to = "column", values_to = "type")
 ```
 
+# ETAPA 1: CÁLCULO DE RENDIMIENTOS.
 
-## Exploratory analysis
+## Filtros de país y moneda. 
 
-Podemos notar que tenemos una tablas con `r dim(global_daily)[1]` filas y 
-`r dim(global_daily)[2]` columnas.
-  
-¿Cuántos valores distintos hay por cada columna? y ¿ Cuántos `NA` hay en cada columna?
+De la base original extraemos un subconjunto de datos. Este subconjunto corresponde a los registros con valor 208 en la columna "exchg".
 ```{r}
-global_daily %>% 
-  summarise_all(n_distinct)
-
-global_daily %>%
-  summarise_all(~ sum(is.na(.x)))
-
-```
-
-Deberá llamarnos la atención que no hay correspondencia uno a uno entre `conm` y `gvkey`,
-por lo que suponemos que un `conm` tiene 2 `gvkey`, pues hay 292 `gvkey` y 291 `conm` Veamos...
-
-```{r}
-global_daily %>% 
-  select(gvkey, conm) %>% 
-  group_by(conm) %>% 
-  summarise(distinct_key = n_distinct(gvkey)) %>% 
-  filter(distinct_key > 1)
-```
-## Caso Nacional Financiera 
-
-Efectivamente es "NACIONAL FINANCIERA SNC" quien tiene asociados dos `gvkey` distintos.
-Veamos cuales son
-```{r}
-global_daily %>% 
-  filter(conm == "NACIONAL FINANCIERA SNC") %>% 
-  group_by(gvkey) %>% 
-  summarise(n = n(), prim_ap = min(datadate), ult_ap = max(datadate))
-```
-Lo que nos hace suponer que desde agosto de 2013 coexisten los dos `gvkey`, por lo que
-tendría que haber más de un registro por día
-```{r}
-global_daily %>% 
-  filter(conm == "NACIONAL FINANCIERA SNC") %>% 
-  group_by(datadate) %>% 
-  summarise(n = n()) %>% 
-  filter(datadate >= "2013-08-07", datadate <= "2019-11-26")
-```
-
-Efectivamente cada día hay dos registros cada uno con diferente `gvkey`. Tomemos de muestra
-al 2019.
-```{r}
-global_daily %>%
-  filter(
-    conm == "NACIONAL FINANCIERA SNC",
-    datadate >= "2013-08-07",
-    datadate <= "2019-11-26"
-  ) %>%
-  mutate(mv = cshoc * prccd) %>% #Creamos la mv para quedarnos con la de mayor valor
-  group_by(datadate, conm) %>% 
-  mutate(rank = rank(-mv)) # Creamos el ranking de mayor a menor 
-# Veremos que los que tienen el que gvkey que aparece menos veces son también los 
-# que los que tienen menor mv, así que más adelante los eliminaremos.
-```
-
-**¡¿Qué hacemos?!** 
-¿Quitamos los 1,645 registros de gvkey 315924?
-**Respuesta:** Hay que quitarlos...
-
-***
-
-Siguiendo con el análisis... Vemos que hay cinco diferentes monedas `curcdd`y cinco diferentes
-mercados `exchg`. 
-Donde el código 208 corresponde a la bolsa mexicana y que tiene 708,038 que coinciden con 
-la suma de los registros con las monedas MXP, MXN y los NA.
-Así que todos los registros que no sean `exchg = 208 ` son candidatos a eliminación
-
-```{r}
-global_daily %>% 
-  count(curcdd) 
-
-global_daily %>% 
-  count(exchg)
-
-global_daily %>%
-  count(curcdd) %>%
-  filter(curcdd == "MXN" | curcdd == "MXP" | is.na(curcdd)) %>%
-  summarise(not_eur_usd = sum(n))
-```
-***
-
-## observaciones de cada compañía
-```{r}
-global_daily %>% 
-  count(conm) %>% 
-  arrange(n)
-
-# Emisoras con solo una observación y en que fecha aparece
-global_daily %>% 
-  group_by(conm) %>%
-  mutate(n = n()) %>%  
-  filter(n == 1)
-```
-
-¿Cuántas empresas hay por sector?
-```{r}
-# Temporalmente se usa el gsector... Que luego sabremos que en este caso es impreciso
-# y tomaremos una categorización diferente
-global_daily %>% 
-  group_by(gics_name) %>% 
-  summarise(n = n_distinct(conm))
-```
-
-***
-
-## Se comienza a limpiar
-```{r}
-# Se eliminan los registros que no correspondan al código de mercado de la BMV, así
-# como el registro restante en USD 
-
-# CHECKPOINT
-global_daily1 <- global_daily %>% 
-  filter(exchg == 208, !curcdd %in% "USD")
-
-# Solo quedan registros en MXP, MXN y NA
-global_daily1 %>% 
-  count(curcdd)
-
-# Se procede a ver cuales son los registros que tiene NA en moneda, se selecciona
-# el conjunto } fecha/emisora con el fin de ver si se tiene algún repetido que sí tenga moneda,
-# para poder eliminar el que aparezca sin moneda
-# 515 registros que no traen moneda
-curcdd_na <- global_daily1 %>% 
-  filter(is.na(curcdd)) %>% 
-  mutate(dummy = paste(as.character(datadate), conm)) %>% 
-  pull(dummy)
-
-# Se selecciona los registros que sí tienen moneda y tienen un repetido sin moneda
-# Se busca si alguno de los 515 registros que no tren moneda tiene algún registro de
-# idéntica fecha y nombre pero que sí traiga moneda (un gemelo bueno)
-rep_curr <- global_daily1 %>% 
-  mutate(dummy = paste(as.character(datadate), conm)) %>% 
-  filter(dummy %in% curcdd_na) %>% 
-  filter(curcdd == "MXN") %>%  # 151 **istintos** conjuntos dadtadate/conm 
-  pull(dummy)
-
-# Se busca en toda la base esos 151 registros, para encontrar para esa fecha y
-# compañía todos los registros (con y sin moneda) y se filtran los que no tienen moneda
-filter_out <-  global_daily1 %>% 
-  mutate(dummy = paste(as.character(datadate), conm)) %>% 
-  filter(dummy %in% rep_curr & is.na(curcdd)) %>% 
-  pull(id)
-
-### CHECKPOINT
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% filter_out)
-# ---
-
-# ¿Cuantos NA en moneda quedan? Esos no los quitamos todavía pues no tienen un gemelo
-# bueno
-global_daily1 %>% 
-  count(curcdd)
-```
-```{r}
-# Puesto que los que restan con NA en curcdd también tienen NA en varias columnas más
-# procedo a eliminarlas
-global_daily1 %>%
-  summarise_all(~ sum(is.na(.x)))
-
-## CHECKPOINT
-global_daily1 <- global_daily1 %>% 
-  filter(!is.na(curcdd))
+#Creamos un nuevo data frame, en caso de querer regresar a este punto.
+DatosMX01 <- global_daily %>% filter(exchg == 208)
+# Generamos un resumen para ver los resultados del filtro.
+DatosMX01 %>% group_by(exchg)%>% count(curcdd)
+# Solo quedan registros en MXP, MXN, NA y 1 registro en USD.    
 ```
 
 ```{r}
-# Como se ha progresado con repecto a los NA
-global_daily1 %>%
-  summarise_all(~ sum(is.na(.x)))
+# Se elimina el registro con "curcdd" en dólares.
+DatosMX01 <- DatosMX01 %>% filter(!curcdd %in% "USD")
+# Generamos un data frame para revisar las características de los registros que en el campo "curcdd" tienen "NA".
+DatosMX_curcddNA <- DatosMX01 %>% filter(is.na(curcdd))  
+# Generamos una tabla de resumen para identificar si estos registros tienen información de precios.
+DatosMX_curcddNA %>% summarise_all(~ sum(is.na(.)))
+# El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.
+# Por lo tanto los eliminamos de "DatosMX01".
+DatosMX01 <- DatosMX01 %>% filter(!is.na(curcdd))
+# Imprimimos una tabla de resumen. 
+DatosMX01 %>% group_by(exchg)%>% count(curcdd)
+# Eliminamo el data frame "DatosMX_curcddNA".
+rm(DatosMX_curcddNA)
 ```
-***
 
-Todas las empresas que tienen alguna fecha duplicada
+## Duplicidad de fechas
 
+Es importante tener en cuenta que un `GVKEY` es un número único asignado a cada compañía en la base de datos de Compustat (ver: https://libguides.stanford.edu/c.php?g=559845&p=6686228). El `GVKEY` puede ser utilizado en lugar del `CUSIP`, un identificador equivalente al `ISIN`. Asimismo, el `Issue ID` (`iid`) es un código alfanumérico único para cada emisión de valores de una compañía (`GVKEY`) (ver: https://library.unist.ac.kr/libguide/wp-content/uploads/sites/2/2018/11/compustat.pdf)
+
+En el código del siguiente chunk, analizamos la relación entre `GVKEY` e `isin`
+
+```{r}
+# Pasamos la información de "DatosMX01" a otro data frame
+DatosMX_gvkey_isin <- DatosMX01
+# Generamos un identificador único concatenando el campo "gvkey" con "iid".
+DatosMX_gvkey_isin <-unite(DatosMX_gvkey_isin, gvkey_iid, c("gvkey","iid"), sep = "_", remove = FALSE, na.rm = FALSE)
+# Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
+DatosMX_gvkey_isin %>% group_by(gvkey_iid)%>% summarise(distinct_isin = n_distinct(isin))
+DatosMX_gvkey_isin %>% summarise_all(n_distinct)
+DatosMX_gvkey_isin %>% group_by(isin)%>% summarise(distinct_gvkey = n_distinct(gvkey_iid))
+
+```
+
+Las tablas anteriores muestran que cada código "GVKEY-IID" está asociado a un único "isin". 
+Cuando el "isin" es "NA", entonces hay varios códigos "GVKEY-IID". Revisamos las características de este conjunto de datos.
+
+```{r}
+DatosMX_gvkey_isin %>%  group_by(gvkey_iid) %>% filter(is.na(isin)) 
+rm(DatosMX_gvkey_isin)
+```
+
+Aún cuando el "isin" es "NA", los registros tienen información de precios y otra información relevante. Al estar identificados con "gvkey" y "iid", no es relevante que no contengan "isin".
+
+**NOTA: Debe notarse que un "gvkey" está asociado a un nombre de empresa. Esto implica que si sólo analizamos los "gvkey" encontraremos fechas duplicadas. Pero no sería adecuado eliminar los registros con fechas duplicadas, pues pueden corresponder a una emisión ("iid") diferente.**
+
+Verificamos entonces cuáles son los "gvkey_iid" que tienen alguna fecha duplicada.
 ```{r}
 # Cuales son el combinado de fecha/empresa que aparecen en la base más de una vez
 # y los extraemos hacia un vector
-filt_dup <- global_daily1 %>% 
-  group_by(datadate, conm) %>% 
+DatosMX01 <-unite(DatosMX01, gvkey_iid, c("gvkey","iid"), sep = "_", remove = FALSE, na.rm = FALSE)
+filt_dup <- DatosMX01 %>% 
+  group_by(datadate, gvkey_iid) %>% 
   count(datadate) %>% 
   filter(n > 1)  %>% 
-  mutate(dummy = paste(as.character(datadate),conm)) %>% 
+  mutate(dummy = paste(as.character(datadate),gvkey_iid)) %>% 
   pull(dummy)
 
 # Se crea un dataframe con los registros dupolicados
-dups <- global_daily1 %>%
-  mutate(dummy = paste(as.character(datadate), conm)) %>%
+dups <- DatosMX01 %>%
+  mutate(dummy = paste(as.character(datadate), gvkey_iid)) %>%
   filter(dummy %in% filt_dup)
 
 dups
+rm(dups,filt_dup)
 ```
-¿Cuántas empresas diferentes tienen duplicados y cuáles son?
-```{r}
-length(unique(dups$conm))
-unique(dups$conm)
-```
+No hay fechas duplicadas.
 
-Para la limpieza de duplicados tomaremos el registro con mayor mv = cshoc * prccd
-Pero antes de proceder a ello tenemos que considerar los registros en que cshoc tiene
-`NA`
+## Precio ajustado y capitalización de mercado.
+
+Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
 
 ```{r}
-# Identificamos y extraemos a un vector la combinacion de fecha y empresa que tienen
-# NA en cshoc para poder ver si tienen un duplicado que sí tenga un valor en cshoc
-cshoc_na <- dups %>% 
-  filter(is.na(cshoc)) %>% 
-  pull(dummy)
-
-dups %>% 
-  filter(dummy %in% cshoc_na) 
-
-# Se ve que todos los registros tienen alguno igual pero sin na en cshoc, entonces se
-# pueden eliminar los que tienen na
-# Todos tienen al menos un gemelo bueno, entonces podemos eliminar al gemelo malo
-dups %>% 
-  filter(dummy %in% cshoc_na) %>%  
-  group_by(datadate, conm) %>% 
-  summarise(sin_na = sum(!is.na(cshoc)), con_na = sum(is.na(cshoc))) 
-
-elim2 <- dups %>% 
-  filter(dummy %in% cshoc_na, is.na(cshoc)) %>% 
-  pull(id)
-
-
-## CHECKPOINT 
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% elim2)
-
-# Se actualiza el datafrane de duplicados
-dups <- dups %>% 
-  filter(!id %in% elim2)
-
-# Ya noy hay na en cshoc en el dataframe de duplicados
-dups %>% 
-  summarise_all(~ sum(is.na(.x)))
-
+#Creamos un nuevo data frame, en caso de querer regresar a este punto.
+DatosMX02<-DatosMX01 
+#Revisamos si hay precios negativos.
+DatosMX02 %>% group_by(gvkey_iid) %>% filter(prccd<=0) 
+#No se identificaron precios negativos. 
+# Vemos que si hay registros con "NA" en el campo "prccd".
+DatosMX02 %>% count(is.na(prccd))
+#No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
+# Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
+DatosMX02 <- DatosMX02 %>% mutate(prccd=ifelse(curcdd== "MXP",prccd/1000,prccd)) 
+# Entonces, calculamos el Precio ajustado.
+DatosMX02 <- DatosMX02 %>% mutate(Precio=(prccd/ajexdi)*trfd)
+# Calculamos el Valor de Mercado (SIZE).
+DatosMX02 <- DatosMX02 %>% mutate(Size=prccd*cshoc/1000000)
 ```
+
+## Selección por Valor de Mercado.
+
+**En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
+
+## Filtros de fin de mes.
+
+**Hasta aquí voy. Es posible que además de elegir los registros con "monthend==1", debamos establecer otra condición para identificar algún otro precio observado y evitar tener "missing" values.**
+
+Ahora, nos quedamos unicamente con los "monthend" y creamos la variable de precios con la que se calcularán los retornos.
 ```{r}
-# Creamos la nueva variable con la cual decidiremos con que registro quedarnos de los
-# que estén duplicados
-dups <- dups %>% 
-  mutate(mv = cshoc * prccd)
+Prueba01<- DatosMX02 %>% 
+    select(gvkey_iid,datadate,Precio) %>% 
+    mutate(year=year(datadate)) %>% 
+    mutate(month=month(datadate)) %>% 
+    group_by(year,month) %>% 
+    spread(gvkey_iid,Precio)
 
-dups
+Prueba02<- DatosMX02 %>% 
+    select(gvkey_iid,datadate,monthend,Precio) %>% 
+    mutate(year=year(datadate)) %>% 
+    mutate(month=month(datadate)) %>% 
+    group_by(year,month) %>% 
+    spread(gvkey_iid,Precio) %>% 
+    filter(monthend==1)
+
+#Creamos un nuevo data frame, en caso de querer regresar a este punto.
+DatosMX03 <- DatosMX02
+# Dejamos únicamente los registros identificados como "monthend".
+DatosMX03 <- DatosMX03 %>% filter(monthend==1)
 ```
 
-```{r}
-dups %>% 
-  group_by(datadate, conm) %>% 
-  count() 
-
-dups %>% 
-  group_by(conm) %>% 
-  count() 
-
-
-dups <- dups %>% 
-  group_by(datadate, conm) %>% 
-  mutate(rank = rank(-mv)) # %>% 
-  #filter(rank > 1.5)
-dups
-
-elim3 <- dups %>% 
-  filter(rank > 1.5) %>% 
-  pull(id)
-
-#### Checkpoint
-
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% elim3)
-#####
-
-#Los duplicados que quedan. Actualizamos dups
-dups <- dups %>% 
-  filter(rank == 1.5)  # será fácil quitar los que no tengan isin
-dups
-```
-```{r}
-dups %>% 
-  count(datadate,conm)
-
-dups %>% 
- summarise(na = sum(is.na(isin)), not_na = sum(!is.na(isin)))
-
-elim4 <- dups %>% 
-  filter(is.na(isin)) %>% 
-  pull(id)
-
-#### Checkpoint
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% elim4)
-####
-
-
-#Actualiza dups
-
-vec_dups <- dups %>% 
- summarise(na = sum(is.na(isin)), not_na = sum(!is.na(isin))) %>% 
-  filter(na == 0) %>% 
-  mutate(dummy = paste(as.character(datadate), conm)) %>% 
-  pull(dummy)
-
-dups <- dups %>% 
-  filter(dummy %in% vec_dups)
-
-dups
-```
-
-```{r}
-# De estas dos empresas que quedan en duplicados, vemos que una de las variables por las que 
-# se diferencian es el isin, así que eliminaremos los registros que tengan el isin con menos
-# repeticines en toda la base
-global_daily %>%
-  filter(conm == "GRUPO ELEKTRA SA DE CV" | conm == "CYDSA SA") %>%
-  group_by(conm, isin) %>%
-  count()
-
-dups %>%
-  group_by(conm, isin) %>%
-  count()
-```
-
-```{r}
-isin_elim <- global_daily %>%
-  filter(conm == "GRUPO ELEKTRA SA DE CV" | conm == "CYDSA SA") %>%
-  group_by(conm, isin) %>%
-  count() %>% 
-  ungroup() %>% 
-  top_n(-2, n) %>% 
-  pull(isin)
-
-## CHECKPOINT
-elim5 <- dups %>% 
-  filter(isin %in% isin_elim) %>% 
-  pull(id)
-
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% elim5)
-####
-
-# Ya no existen duplicados de una misma empresa con fechas repetidas en la base
-dups <- get_dupes(global_daily1, datadate, conm)
-```
-
-```{r}
-global_daily1 %>% 
-  count(conm) %>% 
-  arrange(n)
-
-global_daily1 %>% 
-  mutate(year = year(datadate)) %>% 
-  group_by(conm, year) %>% 
-  summarise(n = n()) %>% 
-  spread(year, n)
-```
-
-```{r}
-global_daily1 %>%
-  summarise_all(~ sum(is.na(.x)))
-```
-
-```{r}
-## CHECKPOINT
-# Se eliminaran por este momento aquellas empresas que tengan menos de 60 registros
-
-conm_men60 <- global_daily1 %>% 
-  count(conm) %>% 
-  arrange(n) %>% 
-  filter(n < 60) %>% 
-  pull(conm)
-
-elim6 <- global_daily1 %>% 
-  filter(conm %in% conm_men60) %>% 
-  pull(id)
-
-## CHECKPOINT
-global_daily1 <- global_daily1 %>% 
-  filter(!id %in% elim6)
-```
-
-# **Atención para el siguiente proceso se debe tener en su carpeta local del proyecto el archivo "Sectores_GICS_BMV" que se encuentra en la carpeta del "Team"
-
-## Veamos la cuestión de los sectores
-
-```{r}
-
-#library(readxl)
-sectores <- read_xlsx(
-  path = "Sectores_GICS_BMV.xlsx",
-  sheet = "Sectores",
-  range = "A1:E261",
-  col_names = TRUE,
-  col_types = c("text")
-)
-
-global_daily1 <- global_daily1 %>% 
-  left_join(select(sectores, gvkey, BMV), by = "gvkey")
-
-```
-
-
-```{r}
-
-
-# Registros por empresa por año que tengan monthend == 1
-global_daily1 %>% 
-  mutate(year = year(datadate)) %>% 
-  group_by(conm, year) %>% 
-  summarise(n = sum(monthend)) %>% 
-  spread(year, n)
-
-```
-```{r}
-#Desagragado de sectores
-global_daily1 %>% 
-  group_by(BMV) %>% 
-  summarise(n = n_distinct(conm))
-
-global_daily1 %>% 
-  mutate(year = year(datadate)) %>% 
-  group_by(BMV, year) %>%
-  summarise(n = n_distinct(conm)) %>% 
-  spread(year, n)
-```
-## Siguiente paso: crear la variable de los percios
