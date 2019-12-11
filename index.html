@@ -323,15 +323,6 @@ library(readxl)</code></pre>
   distinct(gsector = Sector...1, gics_name = Sector...2)</code></pre>
 <p>Se le añaden los nombres de los sectores a la tabla original</p>
 <pre class="r"><code>global_daily &lt;- left_join(global_daily, gics_table, by = &quot;gsector&quot;)</code></pre>
-<p>Tipo de variable de cada columna</p>
-<pre class="r"><code>global_daily %&gt;%
-  summarise_all(class) %&gt;%
-  pivot_longer(everything(), names_to = &quot;column&quot;, values_to = &quot;type&quot;)</code></pre>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":["column"],"name":[1],"type":["chr"],"align":["left"]},{"label":["type"],"name":[2],"type":["chr"],"align":["left"]}],"data":[{"1":"gvkey","2":"character"},{"1":"iid","2":"character"},{"1":"datadate","2":"Date"},{"1":"conm","2":"character"},{"1":"curcdd","2":"character"},{"1":"ajexdi","2":"numeric"},{"1":"cshoc","2":"numeric"},{"1":"cshtrd","2":"numeric"},{"1":"prccd","2":"numeric"},{"1":"prcstd","2":"numeric"},{"1":"qunit","2":"numeric"},{"1":"trfd","2":"numeric"},{"1":"exchg","2":"numeric"},{"1":"isin","2":"character"},{"1":"sedol","2":"character"},{"1":"fic","2":"character"},{"1":"monthend","2":"numeric"},{"1":"gsector","2":"numeric"},{"1":"sic","2":"numeric"},{"1":"gics_name","2":"character"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
 <div id="etapa-1-cálculo-de-rendimientos." class="section level1">
 <h1>ETAPA 1: CÁLCULO DE RENDIMIENTOS.</h1>
 <div id="filtros-de-país-y-moneda." class="section level2">
@@ -469,16 +460,20 @@ DatosMX01 &lt;- DatosMX01 %&gt;%
     prccd = ifelse(curcdd == &quot;MXP&quot;, prccd / 1000, prccd),
     Precio = (prccd / ajexdi) * trfd,
     Size = prccd * cshoc / 1000000
-  )
-
-
-sectores &lt;- read_xlsx(
+  )</code></pre>
+<p style="color:red">
+<strong>NOTA: Hay que tener en la carpeta local del proyecto el archivo “Sectores_GICS_BMV”</strong>
+</p>
+<pre class="r"><code>sectores &lt;- read_xlsx(
   path = &quot;Sectores_GICS_BMV.xlsx&quot;,
   sheet = &quot;Sectores&quot;,
-  range = &quot;A1:E261&quot;,
+  range = &quot;A1:E292&quot;,
   col_names = TRUE,
   col_types = c(&quot;text&quot;)
-)</code></pre>
+)
+
+DatosMX01 &lt;- DatosMX01 %&gt;% 
+  left_join(select(sectores, gvkey, BMV), by = &quot;gvkey&quot;)</code></pre>
 </div>
 <div id="selección-por-valor-de-mercado." class="section level2">
 <h2>Selección por Valor de Mercado.</h2>
@@ -488,7 +483,24 @@ sectores &lt;- read_xlsx(
 <h2>Filtros de fin de mes.</h2>
 <p><strong>Hasta aquí voy. Es posible que además de elegir los registros con “monthend==1”, debamos establecer otra condición para identificar algún otro precio observado y evitar tener “missing” values.</strong></p>
 <p>Ahora, nos quedamos unicamente con los “monthend” y creamos la variable de precios con la que se calcularán los retornos.</p>
-<pre class="r"><code># Dejamos únicamente los registros identificados como &quot;monthend&quot;.
+<pre class="r"><code>#Prueba 1
+# DatosMX01 %&gt;%
+#   select(gvkey_iid, datadate, Precio) %&gt;%
+#   mutate(year = year(datadate)) %&gt;%
+#   mutate(month = month(datadate)) %&gt;%
+#   group_by(year, month) %&gt;%
+#   spread(gvkey_iid, Precio)
+
+#Prueba 1
+# DatosMX01 %&gt;%
+#   select(gvkey_iid, datadate, monthend, Precio) %&gt;%
+#   mutate(year = year(datadate)) %&gt;%
+#   mutate(month = month(datadate)) %&gt;%
+#   group_by(year, month) %&gt;%
+#   spread(gvkey_iid, Precio) %&gt;%
+#   filter(monthend == 1)
+
+# Dejamos únicamente los registros identificados como &quot;monthend&quot;.
 return_records &lt;- DatosMX01 %&gt;%
   filter(monthend == 1)</code></pre>
 </div>

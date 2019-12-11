@@ -40,13 +40,6 @@ Se le añaden los nombres de los sectores a la tabla original
 global_daily <- left_join(global_daily, gics_table, by = "gsector")
 ```
 
-Tipo de variable de cada columna
-```{r}
-global_daily %>%
-  summarise_all(class) %>%
-  pivot_longer(everything(), names_to = "column", values_to = "type")
-```
-
 # ETAPA 1: CÁLCULO DE RENDIMIENTOS.
 
 ## Filtros de país y moneda. 
@@ -159,16 +152,20 @@ DatosMX01 <- DatosMX01 %>%
     Precio = (prccd / ajexdi) * trfd,
     Size = prccd * cshoc / 1000000
   )
+```
+<p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
 
-
+```{r}
 sectores <- read_xlsx(
   path = "Sectores_GICS_BMV.xlsx",
   sheet = "Sectores",
-  range = "A1:E261",
+  range = "A1:E292",
   col_names = TRUE,
   col_types = c("text")
 )
 
+DatosMX01 <- DatosMX01 %>% 
+  left_join(select(sectores, gvkey, BMV), by = "gvkey")
 ```
 
 ## Selección por Valor de Mercado.
@@ -181,6 +178,23 @@ sectores <- read_xlsx(
 
 Ahora, nos quedamos unicamente con los "monthend" y creamos la variable de precios con la que se calcularán los retornos.
 ```{r}
+#Prueba 1
+# DatosMX01 %>%
+#   select(gvkey_iid, datadate, Precio) %>%
+#   mutate(year = year(datadate)) %>%
+#   mutate(month = month(datadate)) %>%
+#   group_by(year, month) %>%
+#   spread(gvkey_iid, Precio)
+
+#Prueba 1
+# DatosMX01 %>%
+#   select(gvkey_iid, datadate, monthend, Precio) %>%
+#   mutate(year = year(datadate)) %>%
+#   mutate(month = month(datadate)) %>%
+#   group_by(year, month) %>%
+#   spread(gvkey_iid, Precio) %>%
+#   filter(monthend == 1)
+
 # Dejamos únicamente los registros identificados como "monthend".
 return_records <- DatosMX01 %>%
   filter(monthend == 1)
