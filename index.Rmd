@@ -168,33 +168,52 @@ DatosMX01 <- DatosMX01 %>%
   left_join(select(sectores, gvkey, BMV), by = "gvkey")
 ```
 
+## Análisis de sectores por empresas
+```{r}
+DatosMX01 %>% 
+  mutate(year = year(datadate)) %>% 
+  group_by(year, BMV) %>% 
+  summarise(n = n_distinct(conm)) %>%
+  spread(year, n)
+  
+```
+
+
+
+
+
 ## Selección por Valor de Mercado.
 
 **En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
+
+
+
+```{r}
+#Prueba 1
+DatosMX01 %>%
+  select(gvkey_iid, datadate, Precio) %>%
+  mutate(year = year(datadate)) %>%
+  mutate(month = month(datadate)) %>%
+  group_by(year, month) %>%
+  spread(gvkey_iid, Precio)
+
+#Prueba 2
+DatosMX01 %>%
+  select(gvkey_iid, datadate, monthend, Precio) %>%
+  mutate(year = year(datadate)) %>%
+  mutate(month = month(datadate)) %>%
+  group_by(year, month) %>%
+  spread(gvkey_iid, Precio) %>%
+  filter(monthend == 1)
+
+```
 
 ## Filtros de fin de mes.
 
 **Hasta aquí voy. Es posible que además de elegir los registros con "monthend==1", debamos establecer otra condición para identificar algún otro precio observado y evitar tener "missing" values.**
 
-Ahora, nos quedamos unicamente con los "monthend" y creamos la variable de precios con la que se calcularán los retornos.
+Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
-#Prueba 1
-# DatosMX01 %>%
-#   select(gvkey_iid, datadate, Precio) %>%
-#   mutate(year = year(datadate)) %>%
-#   mutate(month = month(datadate)) %>%
-#   group_by(year, month) %>%
-#   spread(gvkey_iid, Precio)
-
-#Prueba 1
-# DatosMX01 %>%
-#   select(gvkey_iid, datadate, monthend, Precio) %>%
-#   mutate(year = year(datadate)) %>%
-#   mutate(month = month(datadate)) %>%
-#   group_by(year, month) %>%
-#   spread(gvkey_iid, Precio) %>%
-#   filter(monthend == 1)
-
 # Dejamos únicamente los registros identificados como "monthend".
 return_records <- DatosMX01 %>%
   filter(monthend == 1)
