@@ -1,4 +1,4 @@
----
+--
 title: "Caso"
 author: "Roberto Ruz Campos"
 date: "30/11/2019"
@@ -12,6 +12,7 @@ library(tidyverse)
 library(lubridate)
 library(rvest)
 library(janitor)
+library(readxl)
 ```
 
 Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
@@ -53,24 +54,38 @@ global_daily %>%
 De la base original extraemos un subconjunto de datos. Este subconjunto corresponde a los registros con valor 208 en la columna "exchg".
 ```{r}
 #Creamos un nuevo data frame, en caso de querer regresar a este punto.
-DatosMX01 <- global_daily %>% filter(exchg == 208)
+DatosMX01 <- global_daily %>%
+  filter(exchg == 208)
 # Generamos un resumen para ver los resultados del filtro.
-DatosMX01 %>% group_by(exchg)%>% count(curcdd)
+DatosMX01 %>%
+  group_by(exchg) %>%
+  count(curcdd)
 # Solo quedan registros en MXP, MXN, NA y 1 registro en USD.    
 ```
 
 ```{r}
 # Se elimina el registro con "curcdd" en dólares.
-DatosMX01 <- DatosMX01 %>% filter(!curcdd %in% "USD")
+DatosMX01 <- DatosMX01 %>%
+  filter(!curcdd %in% "USD")
+
 # Generamos un data frame para revisar las características de los registros que en el campo "curcdd" tienen "NA".
-DatosMX_curcddNA <- DatosMX01 %>% filter(is.na(curcdd))  
+DatosMX_curcddNA <- DatosMX01 %>%
+  filter(is.na(curcdd))  
+
 # Generamos una tabla de resumen para identificar si estos registros tienen información de precios.
-DatosMX_curcddNA %>% summarise_all(~ sum(is.na(.)))
+DatosMX_curcddNA %>%
+  summarise_all(~ sum(is.na(.)))
+
 # El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.
 # Por lo tanto los eliminamos de "DatosMX01".
-DatosMX01 <- DatosMX01 %>% filter(!is.na(curcdd))
+DatosMX01 <- DatosMX01 %>%
+  filter(!is.na(curcdd))
+
 # Imprimimos una tabla de resumen. 
-DatosMX01 %>% group_by(exchg)%>% count(curcdd)
+DatosMX01 %>%
+  group_by(exchg) %>%
+  count(curcdd)
+
 # Eliminamo el data frame "DatosMX_curcddNA".
 rm(DatosMX_curcddNA)
 ```
@@ -82,48 +97,43 @@ Es importante tener en cuenta que un `GVKEY` es un número único asignado a cad
 En el código del siguiente chunk, analizamos la relación entre `GVKEY` e `isin`
 
 ```{r}
-# Pasamos la información de "DatosMX01" a otro data frame
-DatosMX_gvkey_isin <- DatosMX01
 # Generamos un identificador único concatenando el campo "gvkey" con "iid".
-DatosMX_gvkey_isin <-unite(DatosMX_gvkey_isin, gvkey_iid, c("gvkey","iid"), sep = "_", remove = FALSE, na.rm = FALSE)
-# Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
-DatosMX_gvkey_isin %>% group_by(gvkey_iid)%>% summarise(distinct_isin = n_distinct(isin))
-DatosMX_gvkey_isin %>% summarise_all(n_distinct)
-DatosMX_gvkey_isin %>% group_by(isin)%>% summarise(distinct_gvkey = n_distinct(gvkey_iid))
+DatosMX01 <- DatosMX01 %>% 
+  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
+  select(gvkey_iid, everything())
 
+# Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
+# Notemos que existen algunas emisiones (gvkey_iid) que no cuentan con isin
+DatosMX01 %>%
+  group_by(conm, gvkey_iid, isin) %>%
+  summarise(
+    distinct_isin = n_distinct(isin),
+    count_isin = n()
+  ) 
+
+# Puede comprobarse que hay más gvkey_iid que isin
+DatosMX_gvkey_isin %>%
+  summarise_all(n_distinct)
 ```
 
 Las tablas anteriores muestran que cada código "GVKEY-IID" está asociado a un único "isin". 
-Cuando el "isin" es "NA", entonces hay varios códigos "GVKEY-IID". Revisamos las características de este conjunto de datos.
+Hay varios códigos "GVKEY-IID" en  el que"isin" es "NA", entonces . Revisamos las características de este conjunto de datos.
 
 ```{r}
-DatosMX_gvkey_isin %>%  group_by(gvkey_iid) %>% filter(is.na(isin)) 
-rm(DatosMX_gvkey_isin)
+DatosMX01 %>%
+  group_by(gvkey_iid) %>%
+  filter(is.na(isin)) 
+
 ```
 
 Aún cuando el "isin" es "NA", los registros tienen información de precios y otra información relevante. Al estar identificados con "gvkey" y "iid", no es relevante que no contengan "isin".
 
-**NOTA: Debe notarse que un "gvkey" está asociado a un nombre de empresa. Esto implica que si sólo analizamos los "gvkey" encontraremos fechas duplicadas. Pero no sería adecuado eliminar los registros con fechas duplicadas, pues pueden corresponder a una emisión ("iid") diferente.**
+<p style="color:red">**NOTA: Debe notarse que un "gvkey" está asociado a un nombre de empresa. Esto implica que si sólo analizamos los "gvkey" encontraremos fechas duplicadas. Pero no sería adecuado eliminar los registros con fechas duplicadas, pues pueden corresponder a una emisión ("iid") diferente.**</p>
 
-Verificamos entonces cuáles son los "gvkey_iid" que tienen alguna fecha duplicada.
+Verificamos entonces cuáles son los `gvkey_iid` que tienen alguna fecha duplicada.
 ```{r}
-# Cuales son el combinado de fecha/empresa que aparecen en la base más de una vez
-# y los extraemos hacia un vector
-DatosMX01 <-unite(DatosMX01, gvkey_iid, c("gvkey","iid"), sep = "_", remove = FALSE, na.rm = FALSE)
-filt_dup <- DatosMX01 %>% 
-  group_by(datadate, gvkey_iid) %>% 
-  count(datadate) %>% 
-  filter(n > 1)  %>% 
-  mutate(dummy = paste(as.character(datadate),gvkey_iid)) %>% 
-  pull(dummy)
-
-# Se crea un dataframe con los registros dupolicados
-dups <- DatosMX01 %>%
-  mutate(dummy = paste(as.character(datadate), gvkey_iid)) %>%
-  filter(dummy %in% filt_dup)
-
-dups
-rm(dups,filt_dup)
+# Cuales son el combinado de fecha/emisora que aparecen en la base más de una vez  y los extraemos hacia un vector
+get_dupes(DatosMX01, gvkey_iid, datadate)
 ```
 No hay fechas duplicadas.
 
@@ -132,20 +142,25 @@ No hay fechas duplicadas.
 Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
 
 ```{r}
-#Creamos un nuevo data frame, en caso de querer regresar a este punto.
-DatosMX02<-DatosMX01 
 #Revisamos si hay precios negativos.
-DatosMX02 %>% group_by(gvkey_iid) %>% filter(prccd<=0) 
+DatosMX01 %>%
+  filter(prccd <= 0)
+
 #No se identificaron precios negativos. 
 # Vemos que si hay registros con "NA" en el campo "prccd".
-DatosMX02 %>% count(is.na(prccd))
+DatosMX01 %>%
+  summarise(sum(is.na(prccd)))
 #No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
+
 # Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
-DatosMX02 <- DatosMX02 %>% mutate(prccd=ifelse(curcdd== "MXP",prccd/1000,prccd)) 
 # Entonces, calculamos el Precio ajustado.
-DatosMX02 <- DatosMX02 %>% mutate(Precio=(prccd/ajexdi)*trfd)
 # Calculamos el Valor de Mercado (SIZE).
-DatosMX02 <- DatosMX02 %>% mutate(Size=prccd*cshoc/1000000)
+DatosMX01 <- DatosMX01 %>%
+  mutate(
+    prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
+    Precio = (prccd / ajexdi) * trfd,
+    Size = prccd * cshoc / 1000000
+  )
 ```
 
 ## Selección por Valor de Mercado.
@@ -158,24 +173,9 @@ DatosMX02 <- DatosMX02 %>% mutate(Size=prccd*cshoc/1000000)
 
 Ahora, nos quedamos unicamente con los "monthend" y creamos la variable de precios con la que se calcularán los retornos.
 ```{r}
-Prueba01<- DatosMX02 %>% 
-    select(gvkey_iid,datadate,Precio) %>% 
-    mutate(year=year(datadate)) %>% 
-    mutate(month=month(datadate)) %>% 
-    group_by(year,month) %>% 
-    spread(gvkey_iid,Precio)
-
-Prueba02<- DatosMX02 %>% 
-    select(gvkey_iid,datadate,monthend,Precio) %>% 
-    mutate(year=year(datadate)) %>% 
-    mutate(month=month(datadate)) %>% 
-    group_by(year,month) %>% 
-    spread(gvkey_iid,Precio) %>% 
-    filter(monthend==1)
-
-#Creamos un nuevo data frame, en caso de querer regresar a este punto.
-DatosMX03 <- DatosMX02
 # Dejamos únicamente los registros identificados como "monthend".
-DatosMX03 <- DatosMX03 %>% filter(monthend==1)
+return_records <- DatosMX01 %>%
+  filter(monthend == 1)
 ```
+
 
