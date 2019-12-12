@@ -181,6 +181,19 @@ DatosMX01 %>%
 
 **En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
 
+
+```{r}
+# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada una por empresa
+DatosMX01 %>%
+  group_by(gvkey) %>%
+  filter(n_distinct(iid) > 1) %>%
+  group_split() %>%
+  modify(~ group_by(.x, conm, iid) %>% summarise(prom_vm = mean(Size))) 
+```
+
+
+
+
 ```{r}
 #Prueba 1
 DatosMX01 %>%
