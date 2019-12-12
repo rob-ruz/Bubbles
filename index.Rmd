@@ -177,16 +177,9 @@ DatosMX01 %>%
   spread(year, n)
   
 ```
-
-
-
-
-
 ## Selección por Valor de Mercado.
 
 **En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
-
-
 
 ```{r}
 #Prueba 1
@@ -206,8 +199,32 @@ DatosMX01 %>%
   spread(gvkey_iid, Precio) %>%
   filter(monthend == 1)
 
-```
 
+# Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
+DatosMX01 %>%
+  mutate(
+    year = year(datadate),
+    month = paste(month(datadate, label = TRUE), year(datadate))
+  ) %>%
+  group_by(year) %>%
+  group_split() %>%
+  modify(~ group_by(.x, gvkey_iid, conm, month) %>%
+    summarise(n = length(Precio)) %>%
+    spread(month, n))
+  
+# Cuantos precios monthend hay por mes cada año para cada emisora 
+DatosMX01 %>%
+  mutate(
+    year = year(datadate),
+    month = paste(month(datadate, label = TRUE), year(datadate))
+  ) %>%
+  filter(monthend == 1) %>% 
+  group_by(year) %>%
+  group_split() %>%
+  modify(~ group_by(.x, gvkey_iid, conm, month) %>%
+    summarise(n = length(Precio)) %>%
+    spread(month, n))
+```
 ## Filtros de fin de mes.
 
 **Hasta aquí voy. Es posible que además de elegir los registros con "monthend==1", debamos establecer otra condición para identificar algún otro precio observado y evitar tener "missing" values.**
