@@ -152,6 +152,10 @@ DatosMX01 <- DatosMX01 %>%
     Precio = (prccd / ajexdi) * trfd,
     Size = prccd * cshoc / 1000000
   )
+
+#NA EN size
+DatosMX01 %>%
+  filter(is.na(Size))
 ```
 <p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
 
