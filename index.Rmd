@@ -217,6 +217,12 @@ DatosMX01 %>%
   c(emisoras_keep, .) -> emisoras_keep)
 ```
 
+```{r}
+#Estos serían los registros que nos quedarían
+DatosMX01 %>%
+  filter(gvkey_iid %in% emisoras_keep) %>% 
+  arrange(datadate, gvkey)
+```
 
 
 ```{r}
