@@ -187,12 +187,21 @@ DatosMX01 %>%
 
 
 ```{r}
-# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada una por empresa
-DatosMX01 %>%
+# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
+(DatosMX01 %>%
   group_by(gvkey) %>%
   filter(n_distinct(iid) > 1) %>%
   group_split() %>%
-  modify(~ group_by(.x, conm, iid) %>% summarise(prom_vm = mean(Size))) 
+  map(
+    ~ group_by(.x, gvkey, iid) %>%
+      summarise(
+        prom_vm = mean(Size, na.rm = TRUE)
+      ) %>%
+      top_n(1, prom_vm) %>%
+      ungroup() %>%
+      select(gvkey, iid)
+  ) %>%
+  map_chr(~ paste(.x[[1]], .x[[2]], sep = "_")) -> emisoras_keep)
 ```
 
 
