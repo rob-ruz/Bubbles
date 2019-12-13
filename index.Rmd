@@ -204,6 +204,18 @@ DatosMX01 %>%
   map_chr(~ paste(.x[[1]], .x[[2]], sep = "_")) -> emisoras_keep)
 ```
 
+```{r}
+(DatosMX01 %>%
+  group_by(gvkey) %>%
+  filter(n_distinct(iid) == 1) %>%
+  distinct(gvkey, iid) %>%
+  map2_chr(
+    .x = .$gvkey,
+    .y = .$iid,
+    .f = ~ paste(.x, .y, sep = "_")
+  ) %>%
+  c(emisoras_keep, .) -> emisoras_keep)
+```
 
 
 
