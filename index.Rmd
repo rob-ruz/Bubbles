@@ -222,7 +222,10 @@ DatosMX01 <- DatosMX01 %>%
   filter(!gvkey_iid %in% one_record_filt)
 
 
-
+DatosMX01 <- DatosMX01 %>% mutate(
+  year = year(datadate),
+  mes = month(datadate)
+)
 ```
 
 
@@ -250,26 +253,64 @@ DatosMX01 %>%
 DatosMX01 %>%
   mutate(
     year = year(datadate),
-    month = paste(month(datadate, label = TRUE), year(datadate))
+    month = paste(month(datadate, label = TRUE, locale = "US"), year(datadate))
   ) %>%
   group_by(year) %>%
   group_split() %>%
-  modify(~ group_by(.x, gvkey_iid, conm, month) %>%
-    summarise(n = length(Precio)) %>%
-    spread(month, n))
+  modify(
+    ~ group_by(.x, gvkey_iid, conm, month) %>%
+      summarise(n = length(Precio)) %>%
+      pivot_wider(names_from = month, values_from = n) %>%
+      select(
+        gvkey_iid,
+        conm,
+        starts_with("Jan"),
+        starts_with("Feb"),
+        starts_with("Mar"),
+        starts_with("Apr"),
+        starts_with("May"),
+        starts_with("Jun"),
+        starts_with("Jul"),
+        starts_with("Aug"),
+        starts_with("Sep"),
+        starts_with("Oct"),
+        starts_with("Nov"),
+        starts_with("Dec")
+      )
+  )
+
   
 # Cuantos precios monthend hay por mes cada año para cada emisora 
 DatosMX01 %>%
   mutate(
     year = year(datadate),
-    month = paste(month(datadate, label = TRUE), year(datadate))
+    month = paste(month(datadate, label = TRUE, locale = "US"), year(datadate))
   ) %>%
-  filter(monthend == 1) %>% 
+  filter(monthend == 1) %>%
   group_by(year) %>%
   group_split() %>%
-  modify(~ group_by(.x, gvkey_iid, conm, month) %>%
+  modify(
+    ~ group_by(.x, gvkey_iid, conm, month) %>%
     summarise(n = length(Precio)) %>%
-    spread(month, n))
+    pivot_wider(names_from = month, values_from = n) %>% 
+    select(
+      gvkey_iid,
+      conm, 
+      starts_with("Jan"),
+      starts_with("Feb"),
+      starts_with("Mar"),
+      starts_with("Apr"),
+      starts_with("May"),
+      starts_with("Jun"),
+      starts_with("Jul"),
+      starts_with("Aug"),
+      starts_with("Sep"),
+      starts_with("Oct"),
+      starts_with("Nov"),
+      starts_with("Dec")
+    )
+  )
+
 ```
 ## Filtros de fin de mes.
 
