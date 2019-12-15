@@ -13,6 +13,7 @@ library(lubridate)
 library(rvest)
 library(janitor)
 library(readxl)
+library(tsibble)
 ```
 
 Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
@@ -224,91 +225,32 @@ DatosMX01 <- DatosMX01 %>%
 
 DatosMX01 <- DatosMX01 %>% mutate(
   year = year(datadate),
-  mes = month(datadate)
+  mes = yearmonth(datadate)
 )
 ```
 
 
 
 ```{r}
-#Prueba 1
-DatosMX01 %>%
-  select(gvkey_iid, datadate, Precio) %>%
-  mutate(year = year(datadate)) %>%
-  mutate(month = month(datadate)) %>%
-  group_by(year, month) %>%
-  spread(gvkey_iid, Precio)
-
-#Prueba 2
-DatosMX01 %>%
-  select(gvkey_iid, datadate, monthend, Precio) %>%
-  mutate(year = year(datadate)) %>%
-  mutate(month = month(datadate)) %>%
-  group_by(year, month) %>%
-  spread(gvkey_iid, Precio) %>%
-  filter(monthend == 1)
-
-
 # Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
 DatosMX01 %>%
-  mutate(
-    year = year(datadate),
-    month = paste(month(datadate, label = TRUE, locale = "US"), year(datadate))
-  ) %>%
   group_by(year) %>%
   group_split() %>%
   modify(
-    ~ group_by(.x, gvkey_iid, conm, month) %>%
+    ~ group_by(.x, gvkey_iid, conm, mes) %>%
       summarise(n = length(Precio)) %>%
-      pivot_wider(names_from = month, values_from = n) %>%
-      select(
-        gvkey_iid,
-        conm,
-        starts_with("Jan"),
-        starts_with("Feb"),
-        starts_with("Mar"),
-        starts_with("Apr"),
-        starts_with("May"),
-        starts_with("Jun"),
-        starts_with("Jul"),
-        starts_with("Aug"),
-        starts_with("Sep"),
-        starts_with("Oct"),
-        starts_with("Nov"),
-        starts_with("Dec")
-      )
+      pivot_wider(names_from = mes, values_from = n) 
   )
 
-  
 # Cuantos precios monthend hay por mes cada año para cada emisora 
 DatosMX01 %>%
-  mutate(
-    year = year(datadate),
-    month = paste(month(datadate, label = TRUE, locale = "US"), year(datadate))
-  ) %>%
   filter(monthend == 1) %>%
   group_by(year) %>%
   group_split() %>%
   modify(
-    ~ group_by(.x, gvkey_iid, conm, month) %>%
+    ~ group_by(.x, gvkey_iid, conm, mes) %>%
     summarise(n = length(Precio)) %>%
-    pivot_wider(names_from = month, values_from = n) %>% 
-    select(
-      gvkey_iid,
-      conm, 
-      starts_with("Jan"),
-      starts_with("Feb"),
-      starts_with("Mar"),
-      starts_with("Apr"),
-      starts_with("May"),
-      starts_with("Jun"),
-      starts_with("Jul"),
-      starts_with("Aug"),
-      starts_with("Sep"),
-      starts_with("Oct"),
-      starts_with("Nov"),
-      starts_with("Dec")
-    )
+    pivot_wider(names_from = mes, values_from = n) 
   )
 
 ```
@@ -316,15 +258,14 @@ DatosMX01 %>%
 
 ```{r}
 DatosMX01 %>%
-  mutate(ym = yearmonth(datadate)) %>% 
   filter(
     gvkey == "030462",
-    year == 2015,
+    year == 2015 | year == 2014,
     monthend == 1
   ) %>% 
   as_tsibble(
     key = gvkey_iid,
-    index = ym
+    index = mes
   ) %>% 
   fill_gaps() %>% tidyr::fill(everything(), .direction = "down")
 ```
