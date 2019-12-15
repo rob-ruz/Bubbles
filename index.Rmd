@@ -314,7 +314,21 @@ DatosMX01 %>%
 ```
 ## Filtros de fin de mes.
 
-**Hasta aquí voy. Es posible que además de elegir los registros con "monthend==1", debamos establecer otra condición para identificar algún otro precio observado y evitar tener "missing" values.**
+```{r}
+DatosMX01 %>%
+  mutate(ym = yearmonth(datadate)) %>% 
+  filter(
+    gvkey == "030462",
+    year == 2015,
+    monthend == 1
+  ) %>% 
+  as_tsibble(
+    key = gvkey_iid,
+    index = ym
+  ) %>% 
+  fill_gaps() %>% tidyr::fill(everything(), .direction = "down")
+```
+
 
 Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
