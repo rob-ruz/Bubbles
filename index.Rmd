@@ -10,7 +10,6 @@ output:
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
-library(rvest)
 library(janitor)
 library(readxl)
 library(tsibble)
@@ -24,21 +23,6 @@ global_daily <- read_csv("Compustat_Global_Daily.csv",
     datadate = col_date(format = "%Y%m%d")
   )
 )
-```
-
-Extraemos de Wikipedia la tabla de códigos GICS con sus respectivos nombres.
-
-```{r message=FALSE, warning=FALSE}
-gics_table <- read_html("https://en.wikipedia.org/wiki/Global_Industry_Classification_Standard") %>%
-  html_node("table") %>%
-  html_table(fill = TRUE) %>%
-  as_tibble(.name_repair = "universal") %>%
-  distinct(gsector = Sector...1, gics_name = Sector...2)
-```
-
-Se le añaden los nombres de los sectores a la tabla original
-```{r}
-global_daily <- left_join(global_daily, gics_table, by = "gsector")
 ```
 
 # ETAPA 1: CÁLCULO DE RENDIMIENTOS.
@@ -150,13 +134,13 @@ DatosMX01 %>%
 DatosMX01 <- DatosMX01 %>%
   mutate(
     prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
-    Precio = (prccd / ajexdi) * trfd,
-    Size = prccd * cshoc / 1000000
+    adj_price = (prccd / ajexdi) * trfd,
+    mv = prccd * cshoc / 1000000
   )
 
-#NA EN size
+#NA EN mv
 DatosMX01 %>%
-  filter(is.na(Size))
+  filter(is.na(mv))
 ```
 <p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
 
@@ -192,7 +176,7 @@ DatosMX01 %>%
 
 keep_emisoras <- DatosMX01 %>% 
   group_by(gvkey, iid) %>%
-  summarise(prom_mv = mean(Size, na.rm = TRUE)) %>% 
+  summarise(prom_mv = mean(mv, na.rm = TRUE)) %>% 
   filter(n_distinct(iid) > 1) %>% 
   top_n(1, prom_mv) %>% 
   mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
@@ -202,13 +186,13 @@ keep_emisoras <- c(
   keep_emisoras,
   DatosMX01 %>%
     group_by(gvkey, iid) %>%
-    summarise(prom_mv = mean(Size, na.rm = TRUE)) %>%
+    summarise(prom_mv = mean(mv, na.rm = TRUE)) %>%
     filter(n_distinct(iid) == 1) %>%
     mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
     pull(gvkey_iid)
 )
 
-
+### CHECKPOINT ###
 #Estos serían los registros que nos quedarían
 DatosMX01 <- DatosMX01 %>%
   filter(gvkey_iid %in% keep_emisoras) %>% 
@@ -308,7 +292,7 @@ DatosMX01 %>%
 Rellenado de todas las empresas
 
 ```{r}
-datos_mensuales %>%
+datos_mensuales <- datos_mensuales %>%
   as_tsibble(
     key = gvkey_iid,
     index = mes
