@@ -255,13 +255,14 @@ DatosMX01 %>%
 
 ```
 
+## Filtros de fin de mes.
+
 Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
 # Dejamos únicamente los registros identificados como "monthend".
 datos_mensuales <- DatosMX01 %>%
   filter(monthend == 1) 
 ```
-## Filtros de fin de mes.
 
 ```{r paged.print=FALSE}
 #############################################################
@@ -271,11 +272,10 @@ datos_mensuales <- DatosMX01 %>%
 ############################################################
 
 # Para comparar... ¿Cómo estaban antes?
-
+# en una pequeña muestra...
 DatosMX01 %>%
   filter(
-    #gvkey %in% c("221592", "028535"),
-    gvkey == "028535",
+    gvkey %in% c("221592", "028535"),
     monthend == 1
   ) %>% View()
 
@@ -283,9 +283,7 @@ DatosMX01 %>%
 
 DatosMX01 %>%
   filter(
-    #gvkey %in% c("221592", "028535"),
-    gvkey == "028535",
-    #gvkey == "221592",
+    gvkey %in% c("221592", "028535"),
     monthend == 1
   ) %>%
   as_tsibble(
