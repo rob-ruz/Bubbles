@@ -254,59 +254,6 @@ DatosMX01 %>%
   )
 
 ```
-## Filtros de fin de mes.
-
-```{r}
-### 
-DatosMX01 %>% 
-  filter(
-    gvkey == "030462",
-    monthend == 1
-  ) %>% 
-  summarise(
-    min = min(datadate),
-    max = max(datadate)
-  )
-
-### Scan gaps -------
-DatosMX01 %>% 
-  filter(
-    gvkey == "030462",
-    monthend == 1
-  ) %>% 
-  as_tsibble(
-    key = gvkey_iid,
-    index = mes
-  ) %>% 
-  scan_gaps()
-#### ----------------
-
-DatosMX01 %>% 
-  filter(
-    gvkey == "030462",
-    monthend == 1
-  ) %>% 
-  group_by(mes) %>% 
-  count(gvkey)
-
-
-DatosMX01 %>%
-  filter(
-    gvkey == "221592",
-    between(year, 2000, 2005),
-    monthend == 1
-  ) %>%
-  as_tsibble(
-    key = gvkey_iid,
-    index = mes
-  ) %>%
-  fill_gaps() %>%
-  fill(-datadate, .direction = "down") %>% 
-  mutate(
-    datadate = if_else(is.na(datadate), date(mes), datadate)
-  )
-
-```
 
 Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
@@ -314,5 +261,37 @@ Ahora, nos quedamos unicamente con los "monthend"
 return_records <- DatosMX01 %>%
   filter(monthend == 1)
 ```
+
+
+## Filtros de fin de mes.
+
+```{r}
+# Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
+
+DatosMX01 %>%
+  filter(
+    gvkey == "221592",
+    monthend == 1
+  ) %>%
+  as_tsibble(
+    key = gvkey_iid,
+    index = mes
+  ) %>%
+  fill_gaps() %>%
+  fill(-datadate, -year, .direction = "down") %>%
+  mutate(
+    datadate = if_else(
+      is.na(datadate),
+      make_date(
+        year = year(mes),
+        month = month(mes),
+        day = days_in_month(month(mes))
+      ),
+      datadate
+    ),
+    year = year(mes)
+  )
+```
+
 
 
