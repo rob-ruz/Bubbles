@@ -257,19 +257,56 @@ DatosMX01 %>%
 ## Filtros de fin de mes.
 
 ```{r}
-DatosMX01 %>%
+### 
+DatosMX01 %>% 
   filter(
     gvkey == "030462",
-    year == 2015 | year == 2014,
+    monthend == 1
+  ) %>% 
+  summarise(
+    min = min(datadate),
+    max = max(datadate)
+  )
+
+### Scan gaps -------
+DatosMX01 %>% 
+  filter(
+    gvkey == "030462",
     monthend == 1
   ) %>% 
   as_tsibble(
     key = gvkey_iid,
     index = mes
   ) %>% 
-  fill_gaps() %>% tidyr::fill(everything(), .direction = "down")
-```
+  scan_gaps()
+#### ----------------
 
+DatosMX01 %>% 
+  filter(
+    gvkey == "030462",
+    monthend == 1
+  ) %>% 
+  group_by(mes) %>% 
+  count(gvkey)
+
+
+DatosMX01 %>%
+  filter(
+    gvkey == "221592",
+    between(year, 2000, 2005),
+    monthend == 1
+  ) %>%
+  as_tsibble(
+    key = gvkey_iid,
+    index = mes
+  ) %>%
+  fill_gaps() %>%
+  fill(-datadate, .direction = "down") %>% 
+  mutate(
+    datadate = if_else(is.na(datadate), date(mes), datadate)
+  )
+
+```
 
 Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
