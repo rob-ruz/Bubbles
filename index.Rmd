@@ -328,7 +328,8 @@ datos_mensuales %>%
       datadate
     ),
     year = year(mes)
-  )
+  ) %>% 
+  arrange(datadate)
 ```
 
 
