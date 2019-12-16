@@ -258,27 +258,59 @@ DatosMX01 %>%
 Ahora, nos quedamos unicamente con los "monthend" 
 ```{r}
 # Dejamos únicamente los registros identificados como "monthend".
-return_records <- DatosMX01 %>%
-  filter(monthend == 1)
+datos_mensuales <- DatosMX01 %>%
+  filter(monthend == 1) 
 ```
-
-
 ## Filtros de fin de mes.
 
-```{r}
+```{r paged.print=FALSE}
 #############################################################
 ##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
 ##              install.packages("tsibble")                ##
 ##                  library(tsibble)                       ##
 ############################################################
 
+# Para comparar... ¿Cómo estaban antes?
+
+DatosMX01 %>%
+  filter(
+    #gvkey %in% c("221592", "028535"),
+    gvkey == "028535",
+    monthend == 1
+  ) %>% View()
+
 # Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
 
 DatosMX01 %>%
   filter(
-    gvkey == "221592",
+    #gvkey %in% c("221592", "028535"),
+    gvkey == "028535",
+    #gvkey == "221592",
     monthend == 1
   ) %>%
+  as_tsibble(
+    key = gvkey_iid,
+    index = mes
+  ) %>%
+  fill_gaps() %>%
+  fill(-datadate, -year, .direction = "down") %>%
+  mutate(
+    datadate = if_else(
+      is.na(datadate),
+      make_date(
+        year = year(mes),
+        month = month(mes),
+        day = days_in_month(month(mes))
+      ),
+      datadate
+    ),
+    year = year(mes)
+  )
+```
+Rellenado de todas las empresas
+
+```{r}
+datos_mensuales %>%
   as_tsibble(
     key = gvkey_iid,
     index = mes
