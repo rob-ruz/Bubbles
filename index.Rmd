@@ -266,6 +266,12 @@ return_records <- DatosMX01 %>%
 ## Filtros de fin de mes.
 
 ```{r}
+#############################################################
+##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
+##              install.packages("tsibble")                ##
+##                  library(tsibble)                       ##
+############################################################
+
 # Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
 
 DatosMX01 %>%
