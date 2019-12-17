@@ -41,6 +41,24 @@ Se le añaden los nombres de los sectores a la tabla original
 global_daily <- left_join(global_daily, gics_table, by = "gsector")
 ```
 
+Importamos la clasificación de sectores de la BMV.
+<p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
+
+```{r}
+sectores <- read_xlsx(
+  path = "Sectores_GICS_BMV.xlsx",
+  sheet = "Sectores",
+  range = "A1:E292",
+  col_names = TRUE,
+  col_types = c("text")
+)
+
+global_daily <- global_daily %>% 
+  left_join(select(sectores, gvkey, BMV), by = "gvkey")
+
+rm(sectores)
+```
+
 # ETAPA 1: CÁLCULO DE RENDIMIENTOS.
 
 ## Filtros de país y moneda. 
@@ -129,49 +147,146 @@ get_dupes(DatosMX01, gvkey_iid, datadate)
 ```
 No hay fechas duplicadas.
 
+## Filtros de fin de mes.
+
+Enseguida vamos a generar dos data frames. Uno contiene a las observaciones que son fin de mes (DatosMX02), y el otro al resto de observaciones (DFnoFinMes). Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
+
+```{r}
+# Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
+DatosMX02 <-DatosMX01 %>% filter(monthend==1)
+# Vemos que hay observaciones que tienen NA en el campo "cshoc". Por el momento no usamos esta información.
+DatosMX02 %>% filter(is.na(cshoc))
+# Vemos que hay "observaciones "gvkey_iid" con una sóla observación. Por el momento no usamos esta información.
+DatosMX02 %>% count(gvkey_iid) %>% filter(n == 1) 
+# Generamos ahora el data frame con las observaciones que no son fin de mes.
+# hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
+DFnoFinMes <-DatosMX01 %>% filter(monthend!=1) 
+
+# Verificamos la cantidad de registros de "fin de mes" por "gvkey_iid". 
+DatosMX02 %>% group_by(gvkey_iid,month = format(datadate, "%Y%m")) %>% summarise(n=n())%>% filter(n>1) %>% spread(month,n) # NO hay "gvkey_iid" con más de un "fin de mes".
+# write.csv(DatosMX02, "C://Users/arman/Documents/casoITAMlocal/DatosMX02.csv") 
+
+# Para cada "gvkey_iid" identificamos la primer fecha y última para la cual tienen registro de precios en DatosMX02.
+# Ref: https://stackoverflow.com/questions/53561299/rmin-and-max-of-a-date-column-in-a-dataframe 
+Rangofechas <- DatosMX02 %>% group_by(gvkey_iid) %>% 
+  summarise(f_ini=min(datadate),f_fin=max(datadate))
+
+# En el data frame que contiene los registros que "NO son fin de mes", mantenemos las observaciones correspondientes a la última fecha de cada mes.
+# Ref:
+# https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
+DFnoFinMes <- DFnoFinMes %>%
+  group_by(gvkey_iid, month = format(datadate, "%Y-%m")) %>%
+  slice(which.max(cumsum(!is.na(prccd) & !is.na(cshoc)))) %>%
+  ungroup() %>%
+  select(-month)
+
+# En el data frame que contiene los registros que "NO son fin de mes", para cada "gvkey_iid" + "año-mes", identificamos los meses que sí están en "DatosMX02". Mantenemos sólo las observaciones "gvkey_iid" + "año-mes" que no están en "DatosMX02".
+# Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or-left-outer-join-get-all-the-rows-in-a-dataset 
+DFnoFinMes <- DFnoFinMes %>% 
+  mutate(tempID=paste(gvkey, iid,format(datadate, "%Y-%m"), sep = "_")) %>% 
+  anti_join((DatosMX02 %>% mutate(tempID=paste(gvkey, iid,format(datadate, "%Y-%m"), sep = "_"))), by="tempID") %>% 
+  select(-tempID)
+                     
+# Ahora, sólo mantenemos los registros que quedan se encuentran en "Rangofechas", para cada "gvkey_iid".
+# Ref: https://stackoverflow.com/questions/31353595/checking-if-date-is-between-two-dates-in-r
+DFnoFinMes <- DFnoFinMes %>% inner_join(Rangofechas,by="gvkey_iid") %>% rowwise() %>%
+   mutate(match = ifelse(between(datadate, f_ini, f_fin), 1, 0)) %>%
+   filter(match==1) %>%
+   select(-c(f_ini, f_fin,match))
+
+# Finalmente, unimos las observaciones de DFnoFInMes a DatosMX02.
+DatosMX02 <- union_all(DatosMX02,DFnoFinMes)
+rm(DFnoFinMes)
+```
+
 ## Precio ajustado y capitalización de mercado.
 
 Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
 
 ```{r}
 #Revisamos si hay precios negativos.
-DatosMX01 %>%
-  filter(prccd <= 0)
+DatosMX02 %>% filter(prccd <= 0)
 
 #No se identificaron precios negativos. 
 # Vemos que si hay registros con "NA" en el campo "prccd".
-DatosMX01 %>%
-  summarise(prcdd_na = sum(is.na(prccd)))
+DatosMX02 %>% summarise(prcdd_na = sum(is.na(prccd)))
 #No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
 
 # Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
 # Entonces, calculamos el Precio ajustado.
-# Calculamos el Valor de Mercado (SIZE).
-DatosMX01 <- DatosMX01 %>%
+# Calculamos el Valor de Mercado.
+DatosMX02 <- DatosMX02 %>%
   mutate(
     prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
     Precio = (prccd / ajexdi) * trfd,
-    Size = prccd * cshoc / 1000000
+    MV = prccd * cshoc / 1000000
   )
-
-#NA EN size
-DatosMX01 %>%
-  filter(is.na(Size))
 ```
-<p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
+
+## Selección por Valor de Mercado.
+
+En seguida seleccionaremos, por cad "gvkey", aquella emisión (iid) con mayor valro de mercado. Tenemos en cuenta que hay algunas observaciones en que MV es NA debido a que "cshoc" es NA. Sin embargo, estos casos se ajustarán más adelante al llenar los missing values. El cálculo del promedio no contempla los NA.
 
 ```{r}
-sectores <- read_xlsx(
-  path = "Sectores_GICS_BMV.xlsx",
-  sheet = "Sectores",
-  range = "A1:E292",
-  col_names = TRUE,
-  col_types = c("text")
-)
-
-DatosMX01 <- DatosMX01 %>% 
-  left_join(select(sectores, gvkey, BMV), by = "gvkey")
+# Primero identificamos los "gvkey_iid" que tienen una sola observación.
+one_record_filt <- DatosMX02 %>% 
+  count(gvkey_iid) %>% 
+  filter(n == 1) %>% 
+  pull(gvkey_iid)
+# Mantenemos en DatosMX02 los "gvkey_iid" con más de 1 observación.
+DatosMX02 <- DatosMX02 %>% filter(!gvkey_iid %in% one_record_filt)
+# Identificamos los "gvkey" con más de una emisión y se obtiene el valor de mercado de cada una. En un vector guardamos los "gvkey" con mayor valor de mercado.
+keep_emisoras <- DatosMX02 %>% 
+  group_by(gvkey, iid) %>%
+  summarise(prom_mv = mean(MV, na.rm = TRUE)) %>% 
+  filter(n_distinct(iid) > 1) %>% 
+  top_n(1, prom_mv) %>% 
+  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
+  pull(gvkey_iid) 
+# Agregamos los "gvkey" con una sola emisión.
+keep_emisoras <- c(
+  keep_emisoras,
+  DatosMX02 %>%
+    group_by(gvkey, iid) %>%
+    summarise(prom_mv = mean(MV, na.rm = TRUE)) %>%
+    filter(n_distinct(iid) == 1) %>%
+    mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
+    pull(gvkey_iid)
+  )
+# Comparamos DatosMX02 con el vector que se ha generado; mantenemos en DatosMX02 solo los "gvkey_iid" del vector.
+DatosMX02 <- DatosMX02 %>%
+  filter(gvkey_iid %in% keep_emisoras) %>% 
+  arrange(gvkey_iid,datadate) 
 ```
+
+## Missing values
+A partir de la base anterior, trabajaremos en llenar los missing values.
+```{r}
+# Modificamos la forma de "Rangofechas".
+DatosMX03 <- Rangofechas %>% gather(Rango,Fechas,2:3) %>% arrange(gvkey_iid)
+# Generamos la secuencia de fechas entre "Fecha Inicial" y "Fecha Final" para cada "gvkey_iid".
+DatosMX03 <- DatosMX03 %>% group_by(gvkey_iid) %>%
+  complete(Fechas=seq.Date(ceiling_date(min(Fechas),"month"), ceiling_date(max(Fechas),"month"), by="months")-1)%>%
+  select(-Rango)
+# Pasamos las observaciones de DatosMX02 a DatosMX03.
+DatosMX03 <- DatosMX03 %>% 
+  mutate(tempID=paste(gvkey_iid,format(Fechas, "%Y-%m"), sep = "_")) %>% 
+  left_join((DatosMX02 %>% mutate(tempID=paste(gvkey_iid,format(datadate, "%Y-%m"), sep = "_")) %>%
+  select (-gvkey_iid)), by="tempID") %>%
+  select (-tempID)
+# Llenamos entonces los "missing values".
+DatosMX03<- DatosMX03 %>% group_by(gvkey_iid) %>% fill(3,4,6,8,9,11,12,14,20,22,23)
+# Recalculamos Precio y MV
+DatosMX03 <- DatosMX03 %>%
+  mutate(
+    Precio = (prccd / ajexdi) * trfd,
+    MV = prccd * cshoc / 1000000)
+
+```
+
+
+
+**LAS LÍNEAS QUE SIGUEN NO FUERON MODIFICADAS. Los missing values y otros aspectos que se abordan en las siguientes líneas se encuentran en la propuesta de modificación de las líneas de arriba.** 
 
 ## Análisis de sectores por empresas
 ```{r}
@@ -182,53 +297,6 @@ DatosMX01 %>%
   spread(year, n)
   
 ```
-## Selección por Valor de Mercado.
-
-**En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
-
-
-```{r}
-# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
-
-keep_emisoras <- DatosMX01 %>% 
-  group_by(gvkey, iid) %>%
-  summarise(prom_mv = mean(Size, na.rm = TRUE)) %>% 
-  filter(n_distinct(iid) > 1) %>% 
-  top_n(1, prom_mv) %>% 
-  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
-  pull(gvkey_iid) 
-
-keep_emisoras <- c(
-  keep_emisoras,
-  DatosMX01 %>%
-    group_by(gvkey, iid) %>%
-    summarise(prom_mv = mean(Size, na.rm = TRUE)) %>%
-    filter(n_distinct(iid) == 1) %>%
-    mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
-    pull(gvkey_iid)
-)
-
-
-#Estos serían los registros que nos quedarían
-DatosMX01 <- DatosMX01 %>%
-  filter(gvkey_iid %in% keep_emisoras) %>% 
-  arrange(datadate, gvkey) 
-
-one_record_filt <- DatosMX01 %>% 
-  count(gvkey_iid) %>% 
-  filter(n == 1) %>% 
-  pull(gvkey_iid)
-
-DatosMX01 <- DatosMX01 %>% 
-  filter(!gvkey_iid %in% one_record_filt)
-
-
-DatosMX01 <- DatosMX01 %>% mutate(
-  year = year(datadate),
-  mes = yearmonth(datadate)
-)
-```
-
 
 
 ```{r}
