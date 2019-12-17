@@ -314,5 +314,13 @@ datos_mensuales <- datos_mensuales %>%
   arrange(datadate)
 ```
 
+```{r}
+names(datos_mensuales)
+datos_mensuales %>% 
+  as_tibble() %>% 
+  select(gvkey_iid, datadate, adj_price, BMV) %>% 
+  group_by(gvkey_iid) %>% 
+  mutate(returns = (adj_price / lag(adj_price)) - 1)
+```
 
 
