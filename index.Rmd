@@ -222,7 +222,7 @@ DatosMX01 %>%
   group_split() %>%
   modify(
     ~ group_by(.x, gvkey_iid, conm, mes) %>%
-      summarise(n = length(Precio)) %>%
+      summarise(n = length(mv)) %>%
       pivot_wider(names_from = mes, values_from = n) 
   )
 
@@ -233,7 +233,7 @@ DatosMX01 %>%
   group_split() %>%
   modify(
     ~ group_by(.x, gvkey_iid, conm, mes) %>%
-    summarise(n = length(Precio)) %>%
+    summarise(n = length(mv)) %>%
     pivot_wider(names_from = mes, values_from = n) 
   )
 
@@ -248,7 +248,7 @@ datos_mensuales <- DatosMX01 %>%
   filter(monthend == 1) 
 ```
 
-```{r paged.print=FALSE}
+```{r}
 #############################################################
 ##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
 ##              install.packages("tsibble")                ##
@@ -261,7 +261,7 @@ DatosMX01 %>%
   filter(
     gvkey %in% c("221592", "028535"),
     monthend == 1
-  ) %>% View()
+  ) 
 
 # Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
 
