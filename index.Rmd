@@ -314,7 +314,7 @@ datos_mensuales <- datos_mensuales %>%
   arrange(datadate)
 ```
 
-## Creación de rendimientos
+## Creación de rendimientos..
 ```{r}
 datos_mensuales %>% 
   as_tibble() %>% 
