@@ -517,4 +517,8 @@ DatosMX03 <- DatosMX03 %>%
 ```
 #Termina seccion de armando
 
+<<<<<<< HEAD
 comparar datos_mensuales vs DatosMX03
+=======
+comparar datos_mensuales vs DatosMX03
+>>>>>>> 06099d24702bdca7acceb849e960b68fe6f82a6f
