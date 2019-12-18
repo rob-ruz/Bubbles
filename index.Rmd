@@ -25,24 +25,26 @@ global_daily <- read_csv("Compustat_Global_Daily.csv",
 )
 ```
 
-<p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
+Se agregan el sector correspondiente a cada empresa según la clasificación de la BMV
+<p style="color:red">
+**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**
+</p>
 
 ```{r}
-sectores <- read_xlsx(
+global_daily <- read_xlsx(
   path = "Sectores_GICS_BMV.xlsx",
   sheet = "Sectores",
   range = "A1:D292",
   col_names = TRUE,
   col_types = c("text")
-) %>% select(gvkey, BMV)
-
-global_daily <- global_daily %>% 
-  left_join(sectores, by = "gvkey")
-
-rm(sectores)
+) %>%
+  select(gvkey, BMV) %>%
+  left_join(
+    global_daily,
+    .,
+    by = "gvkey"
+  )
 ```
-
-# ETAPA 1: CÁLCULO DE RENDIMIENTOS.
 
 ## Filtros de país y moneda. 
 
@@ -50,36 +52,27 @@ De la base original extraemos un subconjunto de datos. Este subconjunto correspo
 ```{r}
 #Creamos un nuevo data frame, en caso de querer regresar a este punto.
 DatosMX01 <- global_daily %>%
-  filter(exchg == 208)
+  filter(
+    exchg == 208,
+    !curcdd %in% "USD"
+  )
+
 # Generamos un resumen para ver los resultados del filtro.
 DatosMX01 %>%
   group_by(exchg) %>%
   count(curcdd)
-# Solo quedan registros en MXP, MXN, NA y 1 registro en USD.    
-```
+# Solo quedan registros en MXP, MXN, NA    
 
-```{r}
-# Se elimina el registro con "curcdd" en dólares.
-DatosMX01 <- DatosMX01 %>%
-  filter(!curcdd %in% "USD")
-
-# Generamos un data frame para revisar las características de los registros que en el campo "curcdd" tienen "NA".
-DatosMX01 %>%
-  filter(is.na(curcdd))  
-
-# Generamos una tabla de resumen para identificar si estos registros tienen información de precios.
+# Revisar las características de los registros que en el campo "curcdd" tienen "NA" e identificar si estos registros tienen información de precios.
 DatosMX01 %>%
   summarise_all(~ sum(is.na(.)))
 
-# El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.
-# Por lo tanto los eliminamos de "DatosMX01".
+DatosMX01 %>% 
+  filter(is.na(curcdd))
+
+# El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.Por lo tanto los eliminamos de "DatosMX01".
 DatosMX01 <- DatosMX01 %>%
   filter(!is.na(curcdd))
-
-# Imprimimos una tabla de resumen. 
-DatosMX01 %>%
-  group_by(exchg) %>%
-  count(curcdd)
 
 ```
 
@@ -136,19 +129,10 @@ No hay fechas duplicadas.
 Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
 
 ```{r}
-#Revisamos si hay precios negativos.
-DatosMX01 %>%
-  filter(prccd <= 0)
-
-#No se identificaron precios negativos. 
-# Vemos que si hay registros con "NA" en el campo "prccd".
-DatosMX01 %>%
-  summarise(prcdd_na = sum(is.na(prccd)))
-#No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
 
 # Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
 # Entonces, calculamos el Precio ajustado.
-# Calculamos el Valor de Mercado (SIZE).
+# Calculamos el Valor de Mercado
 DatosMX01 <- DatosMX01 %>%
   mutate(
     prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
@@ -220,7 +204,7 @@ DatosMX01 <- DatosMX01 %>% mutate(
 
 
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 # Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
 DatosMX01 %>%
   group_by(year) %>%
@@ -330,6 +314,7 @@ datos_mensuales %>%
   group_split()
 ```
 
+***
 
 # Variante de Armando
 
