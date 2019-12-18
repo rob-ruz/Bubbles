@@ -10,7 +10,6 @@ output:
 ```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
-library(rvest)
 library(janitor)
 library(readxl)
 library(tsibble)
@@ -26,35 +25,19 @@ global_daily <- read_csv("Compustat_Global_Daily.csv",
 )
 ```
 
-Extraemos de Wikipedia la tabla de códigos GICS con sus respectivos nombres.
-
-```{r message=FALSE, warning=FALSE}
-gics_table <- read_html("https://en.wikipedia.org/wiki/Global_Industry_Classification_Standard") %>%
-  html_node("table") %>%
-  html_table(fill = TRUE) %>%
-  as_tibble(.name_repair = "universal") %>%
-  distinct(gsector = Sector...1, gics_name = Sector...2)
-```
-
-Se le añaden los nombres de los sectores a la tabla original
-```{r}
-global_daily <- left_join(global_daily, gics_table, by = "gsector")
-```
-
-Importamos la clasificación de sectores de la BMV.
 <p style="color:red">**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**</p>
 
 ```{r}
 sectores <- read_xlsx(
   path = "Sectores_GICS_BMV.xlsx",
   sheet = "Sectores",
-  range = "A1:E292",
+  range = "A1:D292",
   col_names = TRUE,
   col_types = c("text")
-)
+) %>% select(gvkey, BMV)
 
 global_daily <- global_daily %>% 
-  left_join(select(sectores, gvkey, BMV), by = "gvkey")
+  left_join(sectores, by = "gvkey")
 
 rm(sectores)
 ```
@@ -112,6 +95,7 @@ DatosMX01 <- DatosMX01 %>%
   mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
   select(gvkey_iid, everything())
 
+alt_DatosMX01 <- DatosMX01
 # Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
 # Notemos que existen algunas emisiones (gvkey_iid) que no cuentan con isin
 DatosMX01 %>%
@@ -147,52 +131,278 @@ get_dupes(DatosMX01, gvkey_iid, datadate)
 ```
 No hay fechas duplicadas.
 
+## Precio ajustado y capitalización de mercado.
+
+Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
+
+```{r}
+#Revisamos si hay precios negativos.
+DatosMX01 %>%
+  filter(prccd <= 0)
+
+#No se identificaron precios negativos. 
+# Vemos que si hay registros con "NA" en el campo "prccd".
+DatosMX01 %>%
+  summarise(prcdd_na = sum(is.na(prccd)))
+#No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
+
+# Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
+# Entonces, calculamos el Precio ajustado.
+# Calculamos el Valor de Mercado (SIZE).
+DatosMX01 <- DatosMX01 %>%
+  mutate(
+    prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
+    adj_price = (prccd / ajexdi) * trfd,
+    mv = prccd * cshoc / 1000000
+  )
+
+#NA EN mv
+DatosMX01 %>%
+  filter(is.na(mv))
+```
+
+
+## Análisis de sectores por empresas
+```{r}
+DatosMX01 %>% 
+  mutate(year = year(datadate)) %>% 
+  group_by(year, BMV) %>% 
+  summarise(n = n_distinct(conm)) %>%
+  spread(year, n)
+  
+```
+## Selección por Valor de Mercado.
+
+**En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
+
+
+```{r}
+# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
+
+keep_emisoras <- DatosMX01 %>% 
+  group_by(gvkey, iid) %>%
+  summarise(prom_mv = mean(mv, na.rm = TRUE)) %>% 
+  filter(n_distinct(iid) > 1) %>% 
+  top_n(1, prom_mv) %>% 
+  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
+  pull(gvkey_iid) 
+
+keep_emisoras <- c(
+  keep_emisoras,
+  DatosMX01 %>%
+    group_by(gvkey, iid) %>%
+    summarise(prom_mv = mean(mv, na.rm = TRUE)) %>%
+    filter(n_distinct(iid) == 1) %>%
+    mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
+    pull(gvkey_iid)
+)
+
+### CHECKPOINT ###
+#Estos serían los registros que nos quedarían
+DatosMX01 <- DatosMX01 %>%
+  filter(gvkey_iid %in% keep_emisoras) %>% 
+  arrange(datadate, gvkey) 
+
+one_record_filt <- DatosMX01 %>% 
+  count(gvkey_iid) %>% 
+  filter(n == 1) %>% 
+  pull(gvkey_iid)
+
+DatosMX01 <- DatosMX01 %>% 
+  filter(!gvkey_iid %in% one_record_filt)
+
+
+DatosMX01 <- DatosMX01 %>% mutate(
+  year = year(datadate),
+  mes = yearmonth(datadate)
+)
+```
+
+
+
+```{r}
+# Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
+DatosMX01 %>%
+  group_by(year) %>%
+  group_split() %>%
+  modify(
+    ~ group_by(.x, gvkey_iid, conm, mes) %>%
+      summarise(n = length(mv)) %>%
+      pivot_wider(names_from = mes, values_from = n) 
+  )
+
+# Cuantos precios monthend hay por mes cada año para cada emisora 
+DatosMX01 %>%
+  filter(monthend == 1) %>%
+  group_by(year) %>%
+  group_split() %>%
+  modify(
+    ~ group_by(.x, gvkey_iid, conm, mes) %>%
+    summarise(n = length(mv)) %>%
+    pivot_wider(names_from = mes, values_from = n) 
+  )
+
+```
+
 ## Filtros de fin de mes.
 
-Enseguida vamos a generar dos data frames. Uno contiene a las observaciones que son fin de mes (DatosMX02), y el otro al resto de observaciones (DFnoFinMes). Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
+Ahora, nos quedamos unicamente con los "monthend" 
+```{r}
+# Dejamos únicamente los registros identificados como "monthend".
+datos_mensuales <- DatosMX01 %>%
+  filter(monthend == 1) 
+```
+
+```{r}
+#############################################################
+##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
+##              install.packages("tsibble")                ##
+##                  library(tsibble)                       ##
+############################################################
+
+# Para comparar... ¿Cómo estaban antes?
+# en una pequeña muestra...
+DatosMX01 %>%
+  filter(
+    gvkey %in% c("221592", "028535"),
+    monthend == 1
+  ) 
+
+# Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
+
+DatosMX01 %>%
+  filter(
+    gvkey %in% c("221592", "028535"),
+    monthend == 1
+  ) %>%
+  as_tsibble(
+    key = gvkey_iid,
+    index = mes
+  ) %>%
+  fill_gaps() %>%
+  fill(-datadate, -year, .direction = "down") %>%
+  mutate(
+    datadate = if_else(
+      is.na(datadate),
+      make_date(
+        year = year(mes),
+        month = month(mes),
+        day = days_in_month(month(mes))
+      ),
+      datadate
+    ),
+    year = year(mes)
+  )
+```
+Rellenado de todas las empresas
+
+```{r}
+datos_mensuales <- datos_mensuales %>%
+  as_tsibble(
+    key = gvkey_iid,
+    index = mes
+  ) %>%
+  fill_gaps() %>%
+  fill(-datadate, -year, .direction = "down") %>%
+  mutate(
+    datadate = if_else(
+      is.na(datadate),
+      make_date(
+        year = year(mes),
+        month = month(mes),
+        day = days_in_month(month(mes))
+      ),
+      datadate
+    ),
+    year = year(mes)
+  ) %>% 
+  arrange(datadate)
+```
+
+## Creación de rendimientos..
+```{r}
+datos_mensuales %>% 
+  as_tibble() %>% 
+  select(gvkey_iid, datadate, adj_price, BMV) %>% 
+  group_by(gvkey_iid) %>% 
+  mutate(returns = (adj_price / lag(adj_price)) - 1) %>% 
+  group_by(BMV) %>% 
+  group_split()
+```
+
+
+# Variante de Armando
+
+## Filtros de fin de mes.
+Enseguida vamos a generar dos data frames.
+Uno contiene a las observaciones que son fin de mes (DatosMX02), 
+y el otro al resto de observaciones (DFnoFinMes).
+Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
 
 ```{r}
 # Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
-DatosMX02 <-DatosMX01 %>% filter(monthend==1)
+DatosMX02 <- alt_DatosMX01 %>% filter(monthend == 1)
+
 # Vemos que hay observaciones que tienen NA en el campo "cshoc". Por el momento no usamos esta información.
 DatosMX02 %>% filter(is.na(cshoc))
+
 # Vemos que hay "observaciones "gvkey_iid" con una sóla observación. Por el momento no usamos esta información.
 DatosMX02 %>% count(gvkey_iid) %>% filter(n == 1) 
+
 # Generamos ahora el data frame con las observaciones que no son fin de mes.
 # hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
-DFnoFinMes <-DatosMX01 %>% filter(monthend!=1) 
+DFnoFinMes <- alt_DatosMX01 %>% filter(monthend != 1)
 
 # Verificamos la cantidad de registros de "fin de mes" por "gvkey_iid". 
-DatosMX02 %>% group_by(gvkey_iid,month = format(datadate, "%Y%m")) %>% summarise(n=n())%>% filter(n>1) %>% spread(month,n) # NO hay "gvkey_iid" con más de un "fin de mes".
+DatosMX02 %>%
+  group_by(gvkey_iid, month = format(datadate, "%Y%m")) %>%
+  summarise(n = n()) %>%
+  filter(n > 1) %>%
+  spread(month, n)
+# NO hay "gvkey_iid" con más de un "fin de mes".
 # write.csv(DatosMX02, "C://Users/arman/Documents/casoITAMlocal/DatosMX02.csv") 
 
 # Para cada "gvkey_iid" identificamos la primer fecha y última para la cual tienen registro de precios en DatosMX02.
 # Ref: https://stackoverflow.com/questions/53561299/rmin-and-max-of-a-date-column-in-a-dataframe 
-Rangofechas <- DatosMX02 %>% group_by(gvkey_iid) %>% 
-  summarise(f_ini=min(datadate),f_fin=max(datadate))
+Rangofechas <- DatosMX02 %>%
+  group_by(gvkey_iid) %>%
+  summarise(f_ini = min(datadate), f_fin = max(datadate))
 
 # En el data frame que contiene los registros que "NO son fin de mes", mantenemos las observaciones correspondientes a la última fecha de cada mes.
 # Ref:
 # https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
 DFnoFinMes <- DFnoFinMes %>%
-  group_by(gvkey_iid, month = format(datadate, "%Y-%m")) %>%
+  group_by(
+    gvkey_iid,
+    month = format(datadate, "%Y-%m")
+  ) %>%
   slice(which.max(cumsum(!is.na(prccd) & !is.na(cshoc)))) %>%
   ungroup() %>%
   select(-month)
 
 # En el data frame que contiene los registros que "NO son fin de mes", para cada "gvkey_iid" + "año-mes", identificamos los meses que sí están en "DatosMX02". Mantenemos sólo las observaciones "gvkey_iid" + "año-mes" que no están en "DatosMX02".
+
 # Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or-left-outer-join-get-all-the-rows-in-a-dataset 
-DFnoFinMes <- DFnoFinMes %>% 
-  mutate(tempID=paste(gvkey, iid,format(datadate, "%Y-%m"), sep = "_")) %>% 
-  anti_join((DatosMX02 %>% mutate(tempID=paste(gvkey, iid,format(datadate, "%Y-%m"), sep = "_"))), by="tempID") %>% 
+DFnoFinMes <- DFnoFinMes %>%
+  mutate(tempID = paste(gvkey, iid, format(datadate, "%Y-%m"), sep = "_")) %>%
+  anti_join(
+    (DatosMX02 %>%
+      mutate(
+        tempID = paste(gvkey, iid, format(datadate, "%Y-%m"), sep = "_")
+      )
+    ),
+    by = "tempID"
+  ) %>%
   select(-tempID)
                      
 # Ahora, sólo mantenemos los registros que quedan se encuentran en "Rangofechas", para cada "gvkey_iid".
 # Ref: https://stackoverflow.com/questions/31353595/checking-if-date-is-between-two-dates-in-r
-DFnoFinMes <- DFnoFinMes %>% inner_join(Rangofechas,by="gvkey_iid") %>% rowwise() %>%
-   mutate(match = ifelse(between(datadate, f_ini, f_fin), 1, 0)) %>%
-   filter(match==1) %>%
-   select(-c(f_ini, f_fin,match))
+DFnoFinMes <- DFnoFinMes %>%
+  inner_join(Rangofechas, by = "gvkey_iid") %>%
+  rowwise() %>%
+  mutate(match = ifelse(between(datadate, f_ini, f_fin), 1, 0)) %>%
+  filter(match == 1) %>%
+  select(-c(f_ini, f_fin, match))
 
 # Finalmente, unimos las observaciones de DFnoFInMes a DatosMX02.
 DatosMX02 <- union_all(DatosMX02,DFnoFinMes)
@@ -233,8 +443,10 @@ one_record_filt <- DatosMX02 %>%
   count(gvkey_iid) %>% 
   filter(n == 1) %>% 
   pull(gvkey_iid)
+
 # Mantenemos en DatosMX02 los "gvkey_iid" con más de 1 observación.
 DatosMX02 <- DatosMX02 %>% filter(!gvkey_iid %in% one_record_filt)
+
 # Identificamos los "gvkey" con más de una emisión y se obtiene el valor de mercado de cada una. En un vector guardamos los "gvkey" con mayor valor de mercado.
 keep_emisoras <- DatosMX02 %>% 
   group_by(gvkey, iid) %>%
@@ -263,142 +475,46 @@ DatosMX02 <- DatosMX02 %>%
 A partir de la base anterior, trabajaremos en llenar los missing values.
 ```{r}
 # Modificamos la forma de "Rangofechas".
-DatosMX03 <- Rangofechas %>% gather(Rango,Fechas,2:3) %>% arrange(gvkey_iid)
+DatosMX03 <- Rangofechas %>%
+  gather(Rango, Fechas, 2:3) %>%
+  arrange(gvkey_iid)
+
 # Generamos la secuencia de fechas entre "Fecha Inicial" y "Fecha Final" para cada "gvkey_iid".
-DatosMX03 <- DatosMX03 %>% group_by(gvkey_iid) %>%
-  complete(Fechas=seq.Date(ceiling_date(min(Fechas),"month"), ceiling_date(max(Fechas),"month"), by="months")-1)%>%
+DatosMX03 <- DatosMX03 %>%
+  group_by(gvkey_iid) %>%
+  complete(
+    Fechas = seq.Date(
+      ceiling_date(min(Fechas), "month"),
+      ceiling_date(max(Fechas), "month"),
+      by = "months"
+    ) - 1
+  ) %>%
   select(-Rango)
+
 # Pasamos las observaciones de DatosMX02 a DatosMX03.
-DatosMX03 <- DatosMX03 %>% 
-  mutate(tempID=paste(gvkey_iid,format(Fechas, "%Y-%m"), sep = "_")) %>% 
-  left_join((DatosMX02 %>% mutate(tempID=paste(gvkey_iid,format(datadate, "%Y-%m"), sep = "_")) %>%
-  select (-gvkey_iid)), by="tempID") %>%
-  select (-tempID)
+DatosMX03 <- DatosMX03 %>%
+  mutate(tempID = paste(gvkey_iid, format(Fechas, "%Y-%m"), sep = "_")) %>%
+  left_join(
+    (DatosMX02 %>%
+      mutate(tempID = paste(gvkey_iid, format(datadate, "%Y-%m"), sep = "_")) %>%
+      select(-gvkey_iid)),
+    by = "tempID"
+  ) %>%
+  select(-tempID)
+
 # Llenamos entonces los "missing values".
-DatosMX03<- DatosMX03 %>% group_by(gvkey_iid) %>% fill(3,4,6,8,9,11,12,14,20,22,23)
+DatosMX03 <- DatosMX03 %>%
+  group_by(gvkey_iid) %>%
+  fill(3, 4, 6, 8, 9, 11, 12, 14, 20, 22, 23)
 # Recalculamos Precio y MV
+
 DatosMX03 <- DatosMX03 %>%
   mutate(
     Precio = (prccd / ajexdi) * trfd,
-    MV = prccd * cshoc / 1000000)
-
-```
-
-
-
-**LAS LÍNEAS QUE SIGUEN NO FUERON MODIFICADAS. Los missing values y otros aspectos que se abordan en las siguientes líneas se encuentran en la propuesta de modificación de las líneas de arriba.** 
-
-## Análisis de sectores por empresas
-```{r}
-DatosMX01 %>% 
-  mutate(year = year(datadate)) %>% 
-  group_by(year, BMV) %>% 
-  summarise(n = n_distinct(conm)) %>%
-  spread(year, n)
-  
-```
-
-
-```{r}
-# Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
-DatosMX01 %>%
-  group_by(year) %>%
-  group_split() %>%
-  modify(
-    ~ group_by(.x, gvkey_iid, conm, mes) %>%
-      summarise(n = length(Precio)) %>%
-      pivot_wider(names_from = mes, values_from = n) 
-  )
-
-# Cuantos precios monthend hay por mes cada año para cada emisora 
-DatosMX01 %>%
-  filter(monthend == 1) %>%
-  group_by(year) %>%
-  group_split() %>%
-  modify(
-    ~ group_by(.x, gvkey_iid, conm, mes) %>%
-    summarise(n = length(Precio)) %>%
-    pivot_wider(names_from = mes, values_from = n) 
+    MV = prccd * cshoc / 1000000
   )
 
 ```
+#Termina seccion de armando
 
-Ahora, nos quedamos unicamente con los "monthend" 
-```{r}
-# Dejamos únicamente los registros identificados como "monthend".
-datos_mensuales <- DatosMX01 %>%
-  filter(monthend == 1) 
-```
-## Filtros de fin de mes.
-
-```{r paged.print=FALSE}
-#############################################################
-##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
-##              install.packages("tsibble")                ##
-##                  library(tsibble)                       ##
-############################################################
-
-# Para comparar... ¿Cómo estaban antes?
-
-DatosMX01 %>%
-  filter(
-    #gvkey %in% c("221592", "028535"),
-    gvkey == "028535",
-    monthend == 1
-  ) %>% View()
-
-# Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
-
-DatosMX01 %>%
-  filter(
-    #gvkey %in% c("221592", "028535"),
-    gvkey == "028535",
-    #gvkey == "221592",
-    monthend == 1
-  ) %>%
-  as_tsibble(
-    key = gvkey_iid,
-    index = mes
-  ) %>%
-  fill_gaps() %>%
-  fill(-datadate, -year, .direction = "down") %>%
-  mutate(
-    datadate = if_else(
-      is.na(datadate),
-      make_date(
-        year = year(mes),
-        month = month(mes),
-        day = days_in_month(month(mes))
-      ),
-      datadate
-    ),
-    year = year(mes)
-  )
-```
-Rellenado de todas las empresas
-
-```{r}
-datos_mensuales %>%
-  as_tsibble(
-    key = gvkey_iid,
-    index = mes
-  ) %>%
-  fill_gaps() %>%
-  fill(-datadate, -year, .direction = "down") %>%
-  mutate(
-    datadate = if_else(
-      is.na(datadate),
-      make_date(
-        year = year(mes),
-        month = month(mes),
-        day = days_in_month(month(mes))
-      ),
-      datadate
-    ),
-    year = year(mes)
-  ) %>% 
-  arrange(datadate)
-```
-
-
-
+comparar datos_mensuales vs DatosMX03
