@@ -527,3 +527,4 @@ DatosMX03 <- DatosMX03 %>%
 ```
 #Termina seccion de armando
 
+cherry pick
