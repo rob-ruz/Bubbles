@@ -344,7 +344,6 @@ DatosMX02 %>%
   filter(n > 1) %>%
   spread(month, n)
 # NO hay "gvkey_iid" con más de un "fin de mes".
-# write.csv(DatosMX02, "C://Users/arman/Documents/casoITAMlocal/DatosMX02.csv") 
 ```
 
 Para cada "gvkey_iid" identificamos la primer fecha y última para la cual tienen registro de precios en DatosMX02.
