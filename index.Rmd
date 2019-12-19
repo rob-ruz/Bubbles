@@ -347,7 +347,7 @@ DatosMX02 %>%
 Para cada "gvkey_iid" identificamos la primer fecha y última para la cual tienen registro de precios en DatosMX02.
 Ref: https://stackoverflow.com/questions/53561299/rmin-and-max-of-a-date-column-in-a-dataframe 
 ```{r}
-Rangofechas <- DatosMX02 %>%
+Rangofechas <- alt_DatosMX01 %>% # Con los datos sin filtrar (antes DatosMX02)
   group_by(gvkey_iid) %>%
   summarise(f_ini = min(datadate), f_fin = max(datadate))
 ```
