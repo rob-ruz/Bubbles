@@ -356,15 +356,14 @@ En el data frame que contiene los registros que "NO son fin de mes", mantenemos 
 Ref: https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
 ```{r}
 DFnoFinMes <- DFnoFinMes %>%
+  mutate(month = yearmonth(datadate)) %>% 
   group_by(
     gvkey_iid,
-    month = format(datadate, "%Y-%m")
+    month
   ) %>%
   slice(
     which.max(
-      cumsum(
-        !is.na(prccd) & !is.na(cshoc)
-      )
+      datadate 
     )
   ) %>%
   ungroup() %>%
