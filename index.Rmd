@@ -157,8 +157,6 @@ DatosMX01 %>%
 ```
 ## Selección por Valor de Mercado.
 
-**En esta sección propongo analizar gráficamente la serie de valor de mercado por cada "gvkey" y sus emisiones (iid) correspondientes, para elegir aquella emisión que mantendremos en la muestra para el ejercicio de burbujas.**
-
 
 ```{r}
 # de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
