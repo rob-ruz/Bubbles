@@ -140,23 +140,9 @@ DatosMX01 <- DatosMX01 %>%
     mv = prccd * cshoc / 1000000
   )
 
-#NA EN mv
-DatosMX01 %>%
-  filter(is.na(mv))
 ```
 
-
-## Análisis de sectores por empresas
-```{r}
-DatosMX01 %>% 
-  mutate(year = year(datadate)) %>% 
-  group_by(year, BMV) %>% 
-  summarise(n = n_distinct(conm)) %>%
-  spread(year, n)
-  
-```
 ## Selección por Valor de Mercado.
-
 
 ```{r}
 # de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
@@ -192,27 +178,78 @@ one_record_filt <- DatosMX01 %>%
 
 DatosMX01 <- DatosMX01 %>% 
   filter(!gvkey_iid %in% one_record_filt)
+```
 
+## Filtros de fin de mes.
+Enseguida vamos a generar dos data frames.
+Uno contiene a las observaciones que son fin de mes (DatosMX02), 
+y el otro al resto de observaciones (DFnoFinMes).
+Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
 
-DatosMX01 <- DatosMX01 %>% mutate(
+```{r}
+# Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
+datos_mensuales <- DatosMX01 %>% filter(monthend == 1)
+
+# Generamos ahora el data frame con las observaciones que no son fin de mes, hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
+DFnoFinMes <- DatosMX01 %>% filter(monthend != 1)
+```
+
+En el data frame que contiene los registros que "NO son fin de mes", mantenemos las observaciones correspondientes a la última fecha de cada mes.
+Ref: https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
+```{r}
+DFnoFinMes <- DFnoFinMes %>%
+  mutate(month = yearmonth(datadate)) %>% 
+  group_by(
+    gvkey_iid,
+    month
+  ) %>%
+  slice(
+    which.max(
+      datadate 
+    )
+  ) %>%
+  ungroup() %>%
+  select(-month)
+```
+
+En el data frame que contiene los registros que "NO son fin de mes", para cada "gvkey_iid" + "año-mes", identificamos los meses que sí están en "DatosMX02". Mantenemos sólo las observaciones "gvkey_iid" + "año-mes" que no están en "DatosMX02".
+
+Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or-left-outer-join-get-all-the-rows-in-a-dataset 
+```{r}
+DFnoFinMes <- DFnoFinMes %>%
+  mutate(
+    tempID = paste(
+      gvkey_iid,
+      format(datadate, "%Y-%m"),
+      sep = "_"
+    )
+  ) %>%
+  anti_join(
+    (datos_mensuales %>%
+      mutate(
+        tempID = paste(
+          gvkey_iid,
+          format(datadate, "%Y-%m"),
+          sep = "_"
+        )
+      )
+    ),
+    by = "tempID"
+  ) %>%
+  select(-tempID)
+
+# Finalmente, unimos las observaciones de DFnoFInMes a DatosMX02.
+datos_mensuales <- union_all(datos_mensuales, DFnoFinMes)
+```
+
+# Rellenado de todas las empresas
+
+```{r}
+datos_mensuales <- datos_mensuales %>% mutate(
   year = year(datadate),
   mes = yearmonth(datadate)
 )
 
-
-```
-
-**Hasta aquí todo es igual en las dos variantes de código
-
-
-## Filtros de fin de mes.
-
-
-
-
-Rellenado de todas las empresas
-
-```{r}
 datos_mensuales <- datos_mensuales %>%
   as_tsibble(
     key = gvkey_iid,
@@ -245,149 +282,3 @@ datos_mensuales %>%
   group_by(BMV) %>% 
   group_split()
 ```
-
-***
-
-# Variante de Armando
-
-## Filtros de fin de mes.
-Enseguida vamos a generar dos data frames.
-Uno contiene a las observaciones que son fin de mes (DatosMX02), 
-y el otro al resto de observaciones (DFnoFinMes).
-Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
-
-```{r}
-# Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
-DatosMX02 <- DatosMX01 %>% filter(monthend == 1)
-
-# Vemos que hay observaciones que tienen NA en el campo "cshoc". Por el momento no usamos esta información.
-DatosMX02 %>% filter(is.na(cshoc))
-
-# Vemos que hay "observaciones "gvkey_iid" con una sóla observación. Por el momento no usamos esta información.
-DatosMX02 %>% count(gvkey_iid) %>% filter(n == 1) 
-
-# Generamos ahora el data frame con las observaciones que no son fin de mes, hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
-DFnoFinMes <- DatosMX01 %>% filter(monthend != 1)
-
-# Verificamos la cantidad de registros de "fin de mes" por "gvkey_iid". 
-DatosMX02 %>%
-  group_by(gvkey_iid, month = format(datadate, "%Y%m")) %>%
-  summarise(n = n()) %>%
-  filter(n > 1) %>%
-  spread(month, n)
-# NO hay "gvkey_iid" con más de un "fin de mes".
-```
-
-Para cada "gvkey_iid" identificamos la primer fecha y última para la cual tienen registro de precios en DatosMX02.
-Ref: https://stackoverflow.com/questions/53561299/rmin-and-max-of-a-date-column-in-a-dataframe 
-```{r}
-Rangofechas <- DatosMX01 %>% # Con los datos sin filtrar (antes DatosMX02)
-  group_by(gvkey_iid) %>%
-  summarise(f_ini = min(datadate), f_fin = max(datadate))
-```
-
-En el data frame que contiene los registros que "NO son fin de mes", mantenemos las observaciones correspondientes a la última fecha de cada mes.
-Ref: https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
-```{r}
-DFnoFinMes <- DFnoFinMes %>%
-  mutate(month = yearmonth(datadate)) %>% 
-  group_by(
-    gvkey_iid,
-    month
-  ) %>%
-  slice(
-    which.max(
-      datadate 
-    )
-  ) %>%
-  ungroup() %>%
-  select(-month)
-```
-
-
-En el data frame que contiene los registros que "NO son fin de mes", para cada "gvkey_iid" + "año-mes", identificamos los meses que sí están en "DatosMX02". Mantenemos sólo las observaciones "gvkey_iid" + "año-mes" que no están en "DatosMX02".
-
-Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or-left-outer-join-get-all-the-rows-in-a-dataset 
-```{r}
-DFnoFinMes <- DFnoFinMes %>%
-  mutate(
-    tempID = paste(
-      gvkey_iid,
-      format(datadate, "%Y-%m"),
-      sep = "_"
-    )
-  ) %>%
-  anti_join(
-    (DatosMX02 %>%
-      mutate(
-        tempID = paste(
-          gvkey_iid,
-          format(datadate, "%Y-%m"),
-          sep = "_"
-        )
-      )
-    ),
-    by = "tempID"
-  ) %>%
-  select(-tempID)
-```
-
-Ahora, sólo mantenemos los registros que quedan se encuentran en "Rangofechas", para cada "gvkey_iid".
-Ref: https://stackoverflow.com/questions/31353595/checking-if-date-is-between-two-dates-in-r
-```{r}
-DFnoFinMes <- DFnoFinMes %>%
-  inner_join(Rangofechas, by = "gvkey_iid") %>%
-  rowwise() %>%
-  mutate(match = ifelse(between(datadate, f_ini, f_fin), 1, 0)) %>%
-  filter(match == 1) %>%
-  select(-c(f_ini, f_fin, match))
-
-# Finalmente, unimos las observaciones de DFnoFInMes a DatosMX02.
-DatosMX02 <- union_all(DatosMX02,DFnoFinMes)
-rm(DFnoFinMes)
-```
-
-
-## Missing values
-A partir de la base anterior, trabajaremos en llenar los missing values.
-```{r}
-# Eliminamos de "Rangofechas" los "gvkey_iid" que no están en "DatosMX02". 
-DatosMX03 <- Rangofechas %>% semi_join(DatosMX02, by="gvkey_iid")
-# Ejemplo:
-# DatosMX03 <- DatosMX03 %>% filter(gvkey_iid=="021631_01W" | gvkey_iid=="023482_01W")
-
-# Generamos las fechas de fin de mes, para la primera y última observación.
-DatosMX03 <- DatosMX03 %>%
-  mutate(f_ini=ceiling_date(f_ini,"month")-1)%>%
-  mutate(f_fin=ceiling_date(f_fin,"month")-1)
-# Generamos una variable que permite contar el número total de meses entre f_ini y f_fin para cada "gvkey_iid".
-ControlObs <- DatosMX03 %>%
-  mutate(num_meses = (lubridate::interval(f_ini, f_fin) %/% months(1)) + 1)
-# Obtenemos la suma de la variable de control. El total de observaciones debe ser igual a este número.
-ControlObs %>% summarise(Obstot=sum(num_meses))
-# Generamos la secuencia de fechas entre "Fecha Inicial" y "Fecha Final" para cada "gvkey_iid".
-# Ref: https://stackoverflow.com/questions/31873462/creating-sequence-of-dates-for-each-group-in-r
-DatosMX03 <- DatosMX03 %>% group_by(gvkey_iid) %>%
-  do(data.frame(., Fechas= seq(.$f_ini+1,.$f_fin+1, by = 'month')-1)) %>%
-  select(-f_ini,-f_fin)
-# Pasamos las observaciones de DatosMX02 a DatosMX03.
-# Ref: https://stackoverflow.com/questions/6709151/how-do-i-combine-two-data-frames-based-on-two-columns
-DatosMX03 <- (DatosMX03 %>% mutate(ymonth=format(Fechas, "%Y%m"))) %>% 
-  left_join((DatosMX02 %>% mutate(ymonth=format(datadate, "%Y%m"))), by=c("gvkey_iid","ymonth"))
-
-DatosMX03<- DatosMX03 %>% group_by(gvkey_iid) %>%
-  fill(gvkey,iid,conm,ajexdi,cshoc,prccd,prcstd,trfd,BMV)
-# Recalculamos Precio y MV
-DatosMX03 <- DatosMX03 %>%
-  mutate(
-    Precio = (prccd / ajexdi) * trfd,
-    MV = prccd * cshoc / 1000000)
-
-# Checks:
-DatosMX03 %>% group_by(BMV) %>% distinct(BMV)
-DatosMX03 %>% group_by(Fechas) %>% distinct(Fechas)
-DatosMX03 %>% group_by(gvkey_iid) %>%  filter(is.na(prccd))
-```
-#Termina seccion de armando
-
-cherry pick
