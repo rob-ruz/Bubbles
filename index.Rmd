@@ -326,7 +326,7 @@ Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-m
 
 ```{r}
 # Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
-DatosMX02 <- alt_DatosMX01 %>% filter(monthend == 1)
+DatosMX02 <- DatosMX01 %>% filter(monthend == 1)
 
 # Vemos que hay observaciones que tienen NA en el campo "cshoc". Por el momento no usamos esta información.
 DatosMX02 %>% filter(is.na(cshoc))
@@ -335,7 +335,7 @@ DatosMX02 %>% filter(is.na(cshoc))
 DatosMX02 %>% count(gvkey_iid) %>% filter(n == 1) 
 
 # Generamos ahora el data frame con las observaciones que no son fin de mes, hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
-DFnoFinMes <- alt_DatosMX01 %>% filter(monthend != 1)
+DFnoFinMes <- DatosMX01 %>% filter(monthend != 1)
 
 # Verificamos la cantidad de registros de "fin de mes" por "gvkey_iid". 
 DatosMX02 %>%
@@ -430,7 +430,7 @@ DatosMX03 <- DatosMX03 %>%
   mutate(f_fin=ceiling_date(f_fin,"month")-1)
 # Generamos una variable que permite contar el número total de meses entre f_ini y f_fin para cada "gvkey_iid".
 ControlObs <- DatosMX03 %>%
-  mutate(num_meses=(interval(f_ini, f_fin) %/% months(1))+1)
+  mutate(num_meses = (interval(f_ini, f_fin) %/% months(1)) + 1)
 # Obtenemos la suma de la variable de control. El total de observaciones debe ser igual a este número.
 ControlObs %>% summarise(Obstot=sum(num_meses))
 # Generamos la secuencia de fechas entre "Fecha Inicial" y "Fecha Final" para cada "gvkey_iid".
@@ -455,6 +455,7 @@ DatosMX03 <- DatosMX03 %>%
 DatosMX03 %>% group_by(BMV) %>% distinct(BMV)
 DatosMX03 %>% group_by(Fechas) %>% distinct(Fechas)
 DatosMX03 %>% group_by(gvkey_iid) %>%  filter(is.na(prccd))
-```#Termina seccion de armando
+```
+#Termina seccion de armando
 
 cherry pick
