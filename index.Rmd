@@ -415,67 +415,6 @@ DatosMX02 <- union_all(DatosMX02,DFnoFinMes)
 rm(DFnoFinMes)
 ```
 
-## Precio ajustado y capitalización de mercado.
-
-Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
-
-```{r}
-#Revisamos si hay precios negativos.
-DatosMX02 %>% filter(prccd <= 0)
-
-#No se identificaron precios negativos. 
-# Vemos que si hay registros con "NA" en el campo "prccd".
-DatosMX02 %>% summarise(prcdd_na = sum(is.na(prccd)))
-#No se identificaron registros con NA en "prccd". Procedemos con los cálculos.
-
-# Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
-# Entonces, calculamos el Precio ajustado.
-# Calculamos el Valor de Mercado.
-DatosMX02 <- DatosMX02 %>%
-  mutate(
-    prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
-    Precio = (prccd / ajexdi) * trfd,
-    MV = prccd * cshoc / 1000000
-  )
-```
-
-## Selección por Valor de Mercado.
-
-En seguida seleccionaremos, por cad "gvkey", aquella emisión (iid) con mayor valro de mercado. Tenemos en cuenta que hay algunas observaciones en que MV es NA debido a que "cshoc" es NA. Sin embargo, estos casos se ajustarán más adelante al llenar los missing values. El cálculo del promedio no contempla los NA.
-
-```{r}
-# Primero identificamos los "gvkey_iid" que tienen una sola observación.
-one_record_filt <- DatosMX02 %>% 
-  count(gvkey_iid) %>% 
-  filter(n == 1) %>% 
-  pull(gvkey_iid)
-
-# Mantenemos en DatosMX02 los "gvkey_iid" con más de 1 observación.
-DatosMX02 <- DatosMX02 %>% filter(!gvkey_iid %in% one_record_filt)
-
-# Identificamos los "gvkey" con más de una emisión y se obtiene el valor de mercado de cada una. En un vector guardamos los "gvkey" con mayor valor de mercado.
-keep_emisoras <- DatosMX02 %>% 
-  group_by(gvkey, iid) %>%
-  summarise(prom_mv = mean(MV, na.rm = TRUE)) %>% 
-  filter(n_distinct(iid) > 1) %>% 
-  top_n(1, prom_mv) %>% 
-  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
-  pull(gvkey_iid) 
-# Agregamos los "gvkey" con una sola emisión.
-keep_emisoras <- c(
-  keep_emisoras,
-  DatosMX02 %>%
-    group_by(gvkey, iid) %>%
-    summarise(prom_mv = mean(MV, na.rm = TRUE)) %>%
-    filter(n_distinct(iid) == 1) %>%
-    mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
-    pull(gvkey_iid)
-  )
-# Comparamos DatosMX02 con el vector que se ha generado; mantenemos en DatosMX02 solo los "gvkey_iid" del vector.
-DatosMX02 <- DatosMX02 %>%
-  filter(gvkey_iid %in% keep_emisoras) %>% 
-  arrange(gvkey_iid,datadate) 
-```
 
 ## Missing values
 A partir de la base anterior, trabajaremos en llenar los missing values.
