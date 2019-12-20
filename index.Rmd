@@ -204,80 +204,12 @@ DatosMX01 <- DatosMX01 %>% mutate(
 
 **Hasta aquí todo es igual en las dos variantes de código
 
-```{r eval=FALSE, include=FALSE}
-# Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
-DatosMX01 %>%
-  group_by(year) %>%
-  group_split() %>%
-  modify(
-    ~ group_by(.x, gvkey_iid, conm, mes) %>%
-      summarise(n = length(mv)) %>%
-      pivot_wider(names_from = mes, values_from = n) 
-  )
-
-# Cuantos precios monthend hay por mes cada año para cada emisora 
-DatosMX01 %>%
-  filter(monthend == 1) %>%
-  group_by(year) %>%
-  group_split() %>%
-  modify(
-    ~ group_by(.x, gvkey_iid, conm, mes) %>%
-    summarise(n = length(mv)) %>%
-    pivot_wider(names_from = mes, values_from = n) 
-  )
-
-```
 
 ## Filtros de fin de mes.
 
-Ahora, nos quedamos unicamente con los "monthend" 
-```{r}
-# Dejamos únicamente los registros identificados como "monthend".
-datos_mensuales <- DatosMX01 %>%
-  filter(monthend == 1) 
-```
 
-```{r}
-#############################################################
-##    ATENCIÓN: Hay que tener instalado el paquete tsibble ##
-##              install.packages("tsibble")                ##
-##                  library(tsibble)                       ##
-############################################################
 
-# Para comparar... ¿Cómo estaban antes?
-# en una pequeña muestra...
-DatosMX01 %>%
-  filter(
-    gvkey %in% c("221592", "028535"),
-    monthend == 1
-  ) 
 
-# Código rellenador hasta el momento se hace para una determinada empresa, pero sería fácil escalarlo a todas...(¿?)
-
-DatosMX01 %>%
-  filter(
-    gvkey %in% c("221592", "028535"),
-    monthend == 1
-  ) %>%
-  as_tsibble(
-    key = gvkey_iid,
-    index = mes
-  ) %>%
-  fill_gaps() %>%
-  fill(-datadate, -year, .direction = "down") %>%
-  mutate(
-    datadate = if_else(
-      is.na(datadate),
-      make_date(
-        year = year(mes),
-        month = month(mes),
-        day = days_in_month(month(mes))
-      ),
-      datadate
-    ),
-    year = year(mes)
-  )
-```
 Rellenado de todas las empresas
 
 ```{r}
