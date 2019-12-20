@@ -88,7 +88,7 @@ DatosMX01 <- DatosMX01 %>%
   mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
   select(gvkey_iid, everything())
 
-alt_DatosMX01 <- DatosMX01
+
 # Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
 # Notemos que existen algunas emisiones (gvkey_iid) que no cuentan con isin
 DatosMX01 %>%
@@ -198,9 +198,11 @@ DatosMX01 <- DatosMX01 %>% mutate(
   year = year(datadate),
   mes = yearmonth(datadate)
 )
+
+alt_DatosMX01 <- DatosMX01
 ```
 
-
+**Hasta aquí todo es igual en las dos variantes de código
 
 ```{r eval=FALSE, include=FALSE}
 # Serie de dataframes (uno por año) con el numero de precios de las emisoras que en ese año cotizaron desglosado por mes
