@@ -378,8 +378,7 @@ Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or
 DFnoFinMes <- DFnoFinMes %>%
   mutate(
     tempID = paste(
-      gvkey,
-      iid,
+      gvkey_iid,
       format(datadate, "%Y-%m"),
       sep = "_"
     )
@@ -388,8 +387,7 @@ DFnoFinMes <- DFnoFinMes %>%
     (DatosMX02 %>%
       mutate(
         tempID = paste(
-          gvkey,
-          iid,
+          gvkey_iid,
           format(datadate, "%Y-%m"),
           sep = "_"
         )
