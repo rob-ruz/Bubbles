@@ -274,11 +274,18 @@ datos_mensuales <- datos_mensuales %>%
 
 ## Creación de rendimientos..
 ```{r}
-datos_mensuales %>% 
-  as_tibble() %>% 
-  select(gvkey_iid, datadate, adj_price, BMV) %>% 
+sectores_list <- datos_mensuales %>% 
+  select(gvkey_iid, datadate, adj_price, BMV, mes) %>% 
   group_by(gvkey_iid) %>% 
   mutate(returns = (adj_price / lag(adj_price)) - 1) %>% 
   group_by(BMV) %>% 
+  #index_by(mes) %>% 
   group_split()
+
+sectores_list <- set_names(sectores_list, map_chr(sectores_list, ~ .x$BMV[[1]]))
+  
+  
+returns_list <- sectores_list %>%
+  modify(~ index_by(.x) %>% summarise(pf_rets = mean(adj_price)))
+
 ```
