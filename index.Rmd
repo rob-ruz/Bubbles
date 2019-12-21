@@ -290,4 +290,30 @@ returns_list <- sectores_list %>%
 
 ```
 
-## Rendimientos Equally 
+## Rendimientos Equally weighted
+
+```{r}
+returns_sector_ew <- datos_mensuales %>% 
+  group_by(gvkey_iid) 
+  
+map2(
+  .x = c(12, 24, 60),
+  .y =c("Ret12", "Ret24", "Ret60"),
+  .f = ~ mutate(
+    returns_sector_ew,
+    !!.y := adj_price / lag(adj_price, n = .x)
+  )
+)
+
+
+lagged_returns <- function(var) {
+  var <- enquo(var)
+  indices <- c(12, 24, 60)
+  map(indices, ~ quo(!!var / lag(!!var, !!.x) - 1)) %>%
+    set_names(sprintf("lag_%s_%02d", quo_text(var), indices))
+}
+
+
+
+```
+
