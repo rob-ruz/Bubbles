@@ -272,7 +272,7 @@ datos_mensuales <- datos_mensuales %>%
   arrange(datadate)
 ```
 
-## Creación de rendimientos..
+## Creación de rendimientos.. Alternativa uno
 ```{r}
 sectores_list <- datos_mensuales %>% 
   select(gvkey_iid, datadate, adj_price, BMV, mes) %>% 
@@ -289,3 +289,5 @@ returns_list <- sectores_list %>%
   modify(~ index_by(.x) %>% summarise(pf_rets = mean(adj_price)))
 
 ```
+
+## Rendimientos Equally 
