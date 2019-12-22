@@ -13,6 +13,7 @@ library(lubridate)
 library(janitor)
 library(readxl)
 library(tsibble)
+library(rlang)
 ```
 
 Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
@@ -293,29 +294,48 @@ returns_list <- sectores_list %>%
 ## Rendimientos Equally weighted
 
 ```{r}
-returns_sector_ew <- datos_mensuales %>% 
-  group_by(gvkey_iid) 
-  
-map2(
-  .x = c(12, 24, 60),
-  .y =c("Ret12", "Ret24", "Ret60"),
-  .f = ~ mutate(
-    returns_sector_ew,
-    !!.y := adj_price / lag(adj_price, n = .x)
-  )
-)
-
 
 lagged_returns <- function(var) {
   var <- enquo(var)
   indices <- c(12, 24, 60)
   map(indices, ~ quo(!!var / lag(!!var, !!.x) - 1)) %>%
-    set_names(sprintf("lag_%s_%02d", quo_text(var), indices))
+    set_names(sprintf("Return_%02d", indices))
 }
 
-
-
+returns_sector_ew <- datos_mensuales %>% 
+  group_by(gvkey_iid) %>% 
+  select(gvkey_iid, datadate, conm, BMV, adj_price, mv, mes) %>% 
+  mutate(!!!lagged_returns(adj_price)) %>% 
+  group_by(BMV) %>% 
+  arrange(conm, datadate) %>% 
+  group_split()
   
+returns_sector_ew <- set_names(returns_sector_ew, map_chr(returns_sector_ew, ~ .x$BMV[[1]]))
+
+#
+returns_sector_ew %>%
+  map(
+    ~ index_by(.x) %>%
+      select(gvkey_iid, mes, Return_12) %>%
+      pivot_wider(
+        names_from = gvkey_iid,
+        values_from = Return_12
+      )
+  ) %>%
+  `[[`(1) %>%
+  ungroup() %>% 
+  arrange(mes) %>% 
+  slice(365) %>%
+  select(-1) %>% 
+  map_dbl(~.x) %>% mean(na.rm=T)
+
+
+returns_sector_ew1 <- returns_sector_ew %>%
+  map(~ index_by(.x) %>% summarise(
+    sec_ret_12 = mean(Return_12, na.rm = T),
+    sec_ret_24 = mean(Return_24, na.rm = T),
+    sec_ret_60 = mean(Return_60, na.rm = T)
+  ))
 # RENDMIENTOS Y RUN UPS
 
 ```
