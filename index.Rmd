@@ -295,11 +295,20 @@ returns_list <- sectores_list %>%
 
 ```{r}
 
+mkt_index <- read_csv("Compustat_Index.csv",
+  col_types = cols(datadate = col_date(format = "%Y%m%d"))
+) %>%
+  filter(gvkeyx == 150039) %>%
+  mutate(mes = yearmonth(datadate)) %>%
+  select(mes, prccm)%>% 
+  mutate(mkt_rend = prccm / lag(prccm, 12)) %>% 
+  select(-prccm)
+
 lagged_returns <- function(var) {
   var <- enquo(var)
   indices <- c(12, 24, 60)
   map(indices, ~ quo(!!var / lag(!!var, !!.x) - 1)) %>%
-    set_names(sprintf("Return_%02d", indices))
+    set_names(sprintf("mkt_return_%02d", indices))
 }
 
 returns_sector_ew <- datos_mensuales %>% 
@@ -312,22 +321,22 @@ returns_sector_ew <- datos_mensuales %>%
   
 returns_sector_ew <- set_names(returns_sector_ew, map_chr(returns_sector_ew, ~ .x$BMV[[1]]))
 
-#
-returns_sector_ew %>%
-  map(
-    ~ index_by(.x) %>%
-      select(gvkey_iid, mes, Return_12) %>%
-      pivot_wider(
-        names_from = gvkey_iid,
-        values_from = Return_12
-      )
-  ) %>%
-  `[[`(1) %>%
-  ungroup() %>% 
-  arrange(mes) %>% 
-  slice(365) %>%
-  select(-1) %>% 
-  map_dbl(~.x) %>% mean(na.rm=T)
+
+# returns_sector_ew1 %>%
+#   map(
+#     ~ index_by(.x) %>%
+#       select(gvkey_iid, mes, Return_12) %>%
+#       pivot_wider(
+#         names_from = gvkey_iid,
+#         values_from = Return_12
+#       )
+#   ) %>%
+#   `[[`(1) %>%
+#   ungroup() %>%
+#   arrange(mes) %>%
+#   slice(365) %>%
+#   select(-1) %>%
+#   map_dbl(~.x) %>% mean(na.rm=T) %>% View()
 
 
 returns_sector_ew1 <- returns_sector_ew %>%
@@ -338,5 +347,46 @@ returns_sector_ew1 <- returns_sector_ew %>%
   ))
 # RENDMIENTOS Y RUN UPS
 
+returns_sector_ew1  <- map(
+  .x = returns_sector_ew,
+  .f = ~ summarise_at(
+    .tbl = index_by(.x),
+    .vars = vars(starts_with("Return")),
+    .funs = ~ mean(., na.rm = TRUE)
+  ) 
+) #%>% map(~left_join(.x, mkt_rets))
+```
+
+```{r}
+returns_sector_ew <- function(lag, umbral) {
+lag <- enquo(lag)
+umbral <- enquo(umbral)
+datos_mensuales %>%
+  group_by(gvkey_iid) %>%
+  select(gvkey_iid, datadate, conm, BMV, adj_price, mv, mes) %>%
+  mutate(
+    return = adj_price / lag(adj_price, !!lag) - 1,
+    return5 = adj_price / lag(adj_price, 60) - 1
+  ) %>%
+  group_by(BMV) %>%
+  arrange(conm, datadate) %>%
+  group_split() %>%
+  set_names(., map_chr(., ~ .x$BMV[[1]])) %>%
+  map(
+    ~ index_by(.) %>% summarise(sector_rend = mean(return, na.rm = T),
+                                sector_rend5 = mean(return5, na.rm = T))
+  ) %>%
+  map(
+    ~ left_join(
+      .,
+      mkt_index %>% mutate(mkt_rend = prccm / lag(prccm, !!lag) - 1) %>% select(-prccm)
+    ) %>%
+      mutate(net_mkt_ret = sector_rend - mkt_rend) %>%
+      select(-mkt_rend) %>%
+      mutate(id_up = if_else(sector_rend >= !!umbral & net_mkt_ret >= !!umbral, 1, 0))
+  )
+}
+
+returns_sector_ew(12, 1)
 ```
 
