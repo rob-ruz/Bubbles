@@ -5,312 +5,145 @@ date: "30/11/2019"
 output:
   html_document:
     df_print: paged
----
+---  
 
-```{r message=FALSE, warning=FALSE}
+```{r loading libraries, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(lubridate)
-library(janitor)
 library(readxl)
 library(tsibble)
 library(rlang)
 ```
 
-Se importa la tabla "Compustat Global Daily" con los tipos de datos correctos.
-```{r}
-global_daily <- read_csv("Compustat_Global_Daily.csv",
-  col_types = cols(
-    sedol = col_character(),
-    datadate = col_date(format = "%Y%m%d")
-  )
-)
-```
-
-Se agregan el sector correspondiente a cada empresa según la clasificación de la BMV
-<p style="color:red">
-**NOTA: Hay que tener en la carpeta local del proyecto el archivo "Sectores_GICS_BMV"**
-</p>
-
-```{r}
-global_daily <- read_xlsx(
-  path = "Sectores_GICS_BMV.xlsx",
-  sheet = "Sectores",
-  range = "A1:D292",
-  col_names = TRUE,
-  col_types = c("text")
-) %>%
-  select(gvkey, BMV) %>%
+```{r importing Compustat daily data}
+raw_data <-
   left_join(
-    global_daily,
-    .,
+    x = read_csv(
+      file = "Compustat_Global_Daily.csv",
+      col_types = cols(
+        sedol = col_character(),
+        datadate = col_date(format = "%Y%m%d")
+      )
+    ),
+    y = read_xlsx(
+      path = "Sectores_GICS_BMV.xlsx",
+      sheet = "Sectores",
+      range = "A1:B292",
+      col_types = c("text")
+    ),
     by = "gvkey"
   )
 ```
 
-## Filtros de país y moneda. 
+```{r importing market index data}
+mkt_index <-
+  read_csv(
+    file = "Compustat_Index.csv",
+    col_types = cols(
+      gvkeyx = col_character(),
+      datadate = col_date(format = "%Y%m%d")
+    )
+  ) %>%
+  filter(gvkeyx == "150039") %>%
+  mutate(mes = yearmonth(datadate)) %>%
+  select(mes, prccm)
+```
 
-De la base original extraemos un subconjunto de datos. Este subconjunto corresponde a los registros con valor 208 en la columna "exchg".
-```{r}
-#Creamos un nuevo data frame, en caso de querer regresar a este punto.
-DatosMX01 <- global_daily %>%
+```{r processing raw data} 
+# Aquí agregaríamos algún otro filtro que nos falte
+daily_raw_data <- raw_data %>%
   filter(
     exchg == 208,
-    !curcdd %in% "USD"
-  )
-
-# Generamos un resumen para ver los resultados del filtro.
-DatosMX01 %>%
-  group_by(exchg) %>%
-  count(curcdd)
-# Solo quedan registros en MXP, MXN, NA    
-
-# Revisar las características de los registros que en el campo "curcdd" tienen "NA" e identificar si estos registros tienen información de precios.
-DatosMX01 %>%
-  summarise_all(~ sum(is.na(.)))
-
-DatosMX01 %>% 
-  filter(is.na(curcdd))
-
-# El resumen muestra que los registros que en el campo "curcdd" tienen "NA", no tienen registro de precios.Por lo tanto los eliminamos de "DatosMX01".
-DatosMX01 <- DatosMX01 %>%
-  filter(!is.na(curcdd))
-
-```
-
-## Duplicidad de fechas
-
-Es importante tener en cuenta que un `GVKEY` es un número único asignado a cada compañía en la base de datos de Compustat (ver: https://libguides.stanford.edu/c.php?g=559845&p=6686228). El `GVKEY` puede ser utilizado en lugar del `CUSIP`, un identificador equivalente al `ISIN`. Asimismo, el `Issue ID` (`iid`) es un código alfanumérico único para cada emisión de valores de una compañía (`GVKEY`) (ver: https://library.unist.ac.kr/libguide/wp-content/uploads/sites/2/2018/11/compustat.pdf)
-
-En el código del siguiente chunk, analizamos la relación entre `GVKEY` e `isin`
-
-```{r}
-# Generamos un identificador único concatenando el campo "gvkey" con "iid".
-DatosMX01 <- DatosMX01 %>% 
-  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
-  select(gvkey_iid, everything())
-
-
-# Generamos un resumen para identificar la cantidad de distintos `isin` asociados a un único "GVKEY_IID".
-# Notemos que existen algunas emisiones (gvkey_iid) que no cuentan con isin
-DatosMX01 %>%
-  group_by(conm, gvkey_iid, isin) %>%
-  summarise(
-    distinct_isin = n_distinct(isin),
-    count_isin = n()
-  ) 
-
-# Puede comprobarse que hay más gvkey_iid que isin
-DatosMX01 %>%
-  summarise_all(n_distinct)
-```
-
-Las tablas anteriores muestran que cada código "GVKEY-IID" está asociado a un único "isin". 
-Hay varios códigos "GVKEY-IID" en  el que"isin" es "NA", entonces . Revisamos las características de este conjunto de datos.
-
-```{r}
-DatosMX01 %>%
-  group_by(gvkey_iid) %>%
-  filter(is.na(isin)) 
-
-```
-
-Aún cuando el "isin" es "NA", los registros tienen información de precios y otra información relevante. Al estar identificados con "gvkey" y "iid", no es relevante que no contengan "isin".
-
-<p style="color:red">**NOTA: Debe notarse que un "gvkey" está asociado a un nombre de empresa. Esto implica que si sólo analizamos los "gvkey" encontraremos fechas duplicadas. Pero no sería adecuado eliminar los registros con fechas duplicadas, pues pueden corresponder a una emisión ("iid") diferente.**</p>
-
-Verificamos entonces cuáles son los `gvkey_iid` que tienen alguna fecha duplicada.
-```{r}
-# Cuales son el combinado de fecha/emisora que aparecen en la base más de una vez  y los extraemos hacia un vector
-get_dupes(DatosMX01, gvkey_iid, datadate)
-```
-No hay fechas duplicadas.
-
-## Precio ajustado y capitalización de mercado.
-
-Para calcular los precios ajustados, primero revisamos si existen precios(prccd) negativos y luego realizamos los cálculos correspondientes.
-
-```{r}
-
-# Para los registros previos al 1 de enero de 1993, dividimos prccd entre 1000 para convertirlos en MXN.
-# Entonces, calculamos el Precio ajustado.
-# Calculamos el Valor de Mercado
-DatosMX01 <- DatosMX01 %>%
+    !curcdd %in% "USD",
+    !is.na(curcdd)
+  ) %>%
+  unite(
+    col = gvkey_iid,
+    1:2,
+    remove = FALSE
+  ) %>%
   mutate(
-    prccd = ifelse(curcdd == "MXP", prccd / 1000, prccd),
+    prccd = if_else(curcdd == "MXP", prccd / 1000, prccd),
     adj_price = (prccd / ajexdi) * trfd,
-    mv = prccd * cshoc / 1000000
-  )
-
+    mv = prccd * cshoc / 1000000,
+    mes = yearmonth(datadate)
+  ) %>%
+  select(gvkey_iid, gvkey, iid, mes, conm, sector, adj_price, mv)
 ```
 
-## Selección por Valor de Mercado.
+```{r converting to monthly data}
+monthly_raw_data <- daily_raw_data %>%
+  group_by(
+    gvkey_iid, 
+    mes
+  ) %>%
+  summarise_all(~ last(.))
+```
 
-```{r}
-# de los gvkey que tienen mas de una emisión... cual es el valor de mercado promedio de cada emisión por empresa, se pone en un vector la emisión que más valor de mercado tenga para quedarse con dicha emisión...
-
-keep_emisoras <- DatosMX01 %>% 
+```{r filtering out iids}
+keep_iids <- monthly_raw_data %>%
   group_by(gvkey, iid) %>%
-  summarise(prom_mv = mean(mv, na.rm = TRUE)) %>% 
+  summarise(avg_mv = mean(mv, na.rm = TRUE)) %>%
   filter(n_distinct(iid) > 1) %>% 
-  top_n(1, prom_mv) %>% 
-  mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>% 
-  pull(gvkey_iid) 
-
-keep_emisoras <- c(
-  keep_emisoras,
-  DatosMX01 %>%
-    group_by(gvkey, iid) %>%
-    summarise(prom_mv = mean(mv, na.rm = TRUE)) %>%
-    filter(n_distinct(iid) == 1) %>%
-    mutate(gvkey_iid = paste(gvkey, iid, sep = "_")) %>%
-    pull(gvkey_iid)
-)
-
-### CHECKPOINT ###
-#Estos serían los registros que nos quedarían
-DatosMX01 <- DatosMX01 %>%
-  filter(gvkey_iid %in% keep_emisoras) %>% 
-  arrange(datadate, gvkey) 
-
-one_record_filt <- DatosMX01 %>% 
-  count(gvkey_iid) %>% 
-  filter(n == 1) %>% 
+  top_n(1, avg_mv) %>% 
+  unite(col = gvkey_iid, 1:2) %>% 
   pull(gvkey_iid)
 
-DatosMX01 <- DatosMX01 %>% 
-  filter(!gvkey_iid %in% one_record_filt)
+monthly_data_inc <- monthly_raw_data %>% 
+  group_by(gvkey) %>% 
+  filter(
+    n_distinct(iid) == 1 |
+    gvkey_iid %in% keep_iids
+  ) %>% 
+  ungroup()
 ```
 
-## Filtros de fin de mes.
-Enseguida vamos a generar dos data frames.
-Uno contiene a las observaciones que son fin de mes (DatosMX02), 
-y el otro al resto de observaciones (DFnoFinMes).
-Del segundo de estos data frames, identificaremos aquellos "gvkey_iid" + "año-mes" que no tienen un identificador igual en el data frame de fin de mes; estas observaciones las utilizaremos para insertarlas en DatosMX02.
-
-```{r}
-# Generamos entonces el data frame que tiene las observaciones que SÍ son "fin de mes". 
-datos_mensuales <- DatosMX01 %>% filter(monthend == 1)
-
-# Generamos ahora el data frame con las observaciones que no son fin de mes, hasta la ejecución de estas instrucciones, la suma de estas observaciones y las observaciones del filtro anterior resultan en el total de observaciones en "DatosMX01".
-DFnoFinMes <- DatosMX01 %>% filter(monthend != 1)
-```
-
-En el data frame que contiene los registros que "NO son fin de mes", mantenemos las observaciones correspondientes a la última fecha de cada mes.
-Ref: https://stackoverflow.com/questions/55933064/last-observation-for-each-company-for-each-month-r
-```{r}
-DFnoFinMes <- DFnoFinMes %>%
-  mutate(month = yearmonth(datadate)) %>% 
-  group_by(
-    gvkey_iid,
-    month
-  ) %>%
-  slice(
-    which.max(
-      datadate 
-    )
-  ) %>%
-  ungroup() %>%
-  select(-month)
-```
-
-En el data frame que contiene los registros que "NO son fin de mes", para cada "gvkey_iid" + "año-mes", identificamos los meses que sí están en "DatosMX02". Mantenemos sólo las observaciones "gvkey_iid" + "año-mes" que no están en "DatosMX02".
-
-Ref: https://stackoverflow.com/questions/51215628/how-to-perform-an-anti-join-or-left-outer-join-get-all-the-rows-in-a-dataset 
-```{r}
-DFnoFinMes <- DFnoFinMes %>%
-  mutate(
-    tempID = paste(
-      gvkey_iid,
-      format(datadate, "%Y-%m"),
-      sep = "_"
-    )
-  ) %>%
-  anti_join(
-    (datos_mensuales %>%
-      mutate(
-        tempID = paste(
-          gvkey_iid,
-          format(datadate, "%Y-%m"),
-          sep = "_"
-        )
-      )
-    ),
-    by = "tempID"
-  ) %>%
-  select(-tempID)
-
-# Finalmente, unimos las observaciones de DFnoFInMes a DatosMX02.
-datos_mensuales <- union_all(datos_mensuales, DFnoFinMes)
-```
-
-# Rellenado de todas las empresas
-
-```{r}
-datos_mensuales <- datos_mensuales %>% mutate(
-  year = year(datadate),
-  mes = yearmonth(datadate)
-)
-
-datos_mensuales <- datos_mensuales %>%
+```{r filling gaps}
+monthly_data <- monthly_data_inc %>%
   as_tsibble(
     key = gvkey_iid,
     index = mes
   ) %>%
   fill_gaps() %>%
-  fill(-datadate, -year, .direction = "down") %>%
-  mutate(
-    datadate = if_else(
-      is.na(datadate),
-      make_date(
-        year = year(mes),
-        month = month(mes),
-        day = days_in_month(month(mes))
-      ),
-      datadate
-    ),
-    year = year(mes)
-  ) %>% 
-  arrange(datadate)
+  fill(everything(), .direction = "down") 
 ```
 
-## Creación de rendimientos.. Alternativa uno
-```{r}
-sectores_list <- datos_mensuales %>% 
-  select(gvkey_iid, datadate, adj_price, BMV, mes) %>% 
-  group_by(gvkey_iid) %>% 
-  mutate(returns = (adj_price / lag(adj_price)) - 1) %>% 
-  group_by(BMV) %>% 
-  #index_by(mes) %>% 
-  group_split()
-
-sectores_list <- set_names(sectores_list, map_chr(sectores_list, ~ .x$BMV[[1]]))
-  
-  
-returns_list <- sectores_list %>%
-  modify(~ index_by(.x) %>% summarise(pf_rets = mean(adj_price)))
-
+```{r calculating rolling betas}
+beta <- monthly_data %>%
+  group_by(gvkey_iid) %>%
+  mutate(
+    returns = adj_price / lag(adj_price) - 1,
+    adj_price = NULL
+  ) %>%
+  drop_na() %>%
+  nest(datos = -gvkey_iid) %>%
+  mutate(
+    datos = map(
+      datos,
+      ~ left_join(
+        .x,
+        mutate(
+          mkt_index,
+          mkt_returns = prccm / lag(prccm) - 1,
+          prccm = NULL
+        ),
+        by = "mes"
+      )
+    ),
+    model = map(
+      datos, 
+      ~ lm(returns ~ mkt_returns, data = .) %>% 
+        tidy()
+    )
+  ) %>% 
+  unnest(model) %>% 
+  filter(term == "mkt_returns") %>% 
+  select(gvkey_iid, beta = estimate, std.error, t.stat = statistic, p.value) 
 ```
 
 ## Rendimientos Equally weighted
 
 ```{r}
-
-mkt_index <- read_csv("Compustat_Index.csv",
-  col_types = cols(datadate = col_date(format = "%Y%m%d"))
-) %>%
-  filter(gvkeyx == 150039) %>%
-  mutate(mes = yearmonth(datadate)) %>%
-  select(mes, prccm)%>% 
-  mutate(mkt_rend = prccm / lag(prccm, 12)) %>% 
-  select(-prccm)
-
-lagged_returns <- function(var) {
-  var <- enquo(var)
-  indices <- c(12, 24, 60)
-  map(indices, ~ quo(!!var / lag(!!var, !!.x) - 1)) %>%
-    set_names(sprintf("mkt_return_%02d", indices))
-}
-
 returns_sector_ew <- datos_mensuales %>% 
   group_by(gvkey_iid) %>% 
   select(gvkey_iid, datadate, conm, BMV, adj_price, mv, mes) %>% 
@@ -320,7 +153,6 @@ returns_sector_ew <- datos_mensuales %>%
   group_split()
   
 returns_sector_ew <- set_names(returns_sector_ew, map_chr(returns_sector_ew, ~ .x$BMV[[1]]))
-
 
 # returns_sector_ew1 %>%
 #   map(
@@ -338,15 +170,6 @@ returns_sector_ew <- set_names(returns_sector_ew, map_chr(returns_sector_ew, ~ .
 #   select(-1) %>%
 #   map_dbl(~.x) %>% mean(na.rm=T) %>% View()
 
-
-returns_sector_ew1 <- returns_sector_ew %>%
-  map(~ index_by(.x) %>% summarise(
-    sec_ret_12 = mean(Return_12, na.rm = T),
-    sec_ret_24 = mean(Return_24, na.rm = T),
-    sec_ret_60 = mean(Return_60, na.rm = T)
-  ))
-# RENDMIENTOS Y RUN UPS
-
 returns_sector_ew1  <- map(
   .x = returns_sector_ew,
   .f = ~ summarise_at(
@@ -363,23 +186,30 @@ lag <- enquo(lag)
 umbral <- enquo(umbral)
 datos_mensuales %>%
   group_by(gvkey_iid) %>%
-  select(gvkey_iid, datadate, conm, BMV, adj_price, mv, mes) %>%
+  select(gvkey_iid, datadate, conm, sector, adj_price, mv, mes) %>%
   mutate(
     return = adj_price / lag(adj_price, !!lag) - 1,
     return5 = adj_price / lag(adj_price, 60) - 1
   ) %>%
-  group_by(BMV) %>%
+  group_by(sector) %>%
   arrange(conm, datadate) %>%
   group_split() %>%
-  set_names(., map_chr(., ~ .x$BMV[[1]])) %>%
+  set_names(., map_chr(., ~ .x$sector[[1]])) %>%
   map(
-    ~ index_by(.) %>% summarise(sector_rend = mean(return, na.rm = T),
-                                sector_rend5 = mean(return5, na.rm = T))
+    ~ index_by(.) %>%
+      summarise(
+        sector_rend = mean(return, na.rm = T),
+        sector_rend5 = mean(return5, na.rm = T)
+      )
   ) %>%
   map(
     ~ left_join(
       .,
-      mkt_index %>% mutate(mkt_rend = prccm / lag(prccm, !!lag) - 1) %>% select(-prccm)
+      mkt_index %>%
+        mutate(
+          mkt_rend = prccm / lag(prccm, !!lag) - 1,
+          prccm = NULL
+        )
     ) %>%
       mutate(net_mkt_ret = sector_rend - mkt_rend) %>%
       select(-mkt_rend) %>%
@@ -387,6 +217,85 @@ datos_mensuales %>%
   )
 }
 
-returns_sector_ew(12, 1)
+returns_sector_ew(24, 1)
 ```
 
+```{r creating portfolio returns functions}
+lagged_returns <- function(var, name, ...) {
+  var <- enquo(var)
+  name <- enquo(name)
+  indices <- c(...)
+    map(
+      indices,
+      ~ quo(!!var / lag(!!var, !!.x) - 1)
+    ) %>% 
+    set_names(sprintf("%s_ret_%d", quo_text(name), indices))
+}
+
+
+make_returns <- function(df, var = adj_price, lag) {
+  lag <- enquo(lag)
+  var <- enquo(var)
+  mutate(
+    df,
+    return = !!var / lag(!!var, !!lag) - 1,
+    !!var := NULL
+  )
+}
+
+make_returns2 <- function(var = adj_price, lag) {
+  lag <- enquo(lag)
+  var <- enquo(var)
+
+  quos(
+    !!var / lag(!!var, !!lag) - 1,
+    NULL
+  ) %>% 
+    set_names(c("returns", var))
+}
+
+make_returns2(lag =60)
+
+ew_rets <- function(df, lag) {
+  lag <- enquo(lag)
+  df %>%
+    group_by(gvkey_iid) %>%
+    mutate(return = adj_price / lag(adj_price, !!lag) - 1) %>%
+    group_by(sector) %>%
+    index_by(mes) %>%
+    summarise(pf_ret = mean(return, na.rm = TRUE))
+}
+
+vw_rets <- function(df, ...) {
+  df %>%
+    group_by(sector) %>%
+    index_by(mes) %>%
+    mutate(wt = mv / sum(mv)) %>%
+    summarise(pf_val = sum(adj_price * wt)) %>%
+    group_by(sector) %>% 
+    mutate(
+      !!!lagged_returns(pf_val, pf, ...),
+      pf_val = NULL
+    ) 
+}
+```
+
+```{r analyzing bubbles}
+vw_rets(monthly_data, 24, 60) %>% 
+  group_split() %>% 
+  # pivot_wider(
+  #   names_from = sector,
+  #   values_from = pf_ret
+  # ) %>% 
+  map(
+  ~ left_join(
+      x = .,
+      y = mutate(mkt_index, !!!lagged_returns(var = prccm, mkt, 24, 60 ), prccm = NULL),
+      by = "mes"
+    ))# %>% 
+    mutate(
+      net_mkt_ret = Returns_24 - return,
+      return = NULL
+    )
+  )
+```
