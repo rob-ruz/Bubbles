@@ -13,6 +13,8 @@ library(lubridate)
 library(readxl)
 library(tsibble)
 library(rlang)
+library(broom)
+library(slide)
 ```
 
 ```{r importing Compustat daily data}
@@ -104,8 +106,9 @@ monthly_data <- monthly_data_inc %>%
     key = gvkey_iid,
     index = mes
   ) %>%
-  fill_gaps() %>%
-  fill(everything(), .direction = "down") 
+  fill_gaps() %>% # Existe la opción de rellenar con alguna función que interpole
+  fill(everything(), .direction = "down") %>% # contrapuesto a lo que tomar el valor anterior
+  select(-c(gvkey, iid))
 ```
 
 ```{r calculating rolling betas}
@@ -116,11 +119,11 @@ beta <- monthly_data %>%
     adj_price = NULL
   ) %>%
   drop_na() %>%
-  nest(datos = -gvkey_iid) %>%
+  nest(datos = c(mes, returns, mv)) %>% 
   mutate(
     datos = map(
       datos,
-      ~ left_join(
+      ~ inner_join(
         .x,
         mutate(
           mkt_index,
@@ -128,17 +131,53 @@ beta <- monthly_data %>%
           prccm = NULL
         ),
         by = "mes"
-      )
-    ),
-    model = map(
-      datos, 
-      ~ lm(returns ~ mkt_returns, data = .) %>% 
-        tidy()
+      ) %>%
+        mutate(
+          rolling = slide(
+            .,
+            ~ lm(returns ~ mkt_returns, data = .),
+            .before = 36,
+            .complete = TRUE
+          ), # %>% purrr::modify(tidy)
+          rolling = purrr::modify(rolling, tidy),
+        ) %>%
+        select(mes, rolling) %>%
+        unnest(rolling)
     )
-  ) %>% 
-  unnest(model) %>% 
-  filter(term == "mkt_returns") %>% 
-  select(gvkey_iid, beta = estimate, std.error, t.stat = statistic, p.value) 
+  ) 
+
+
+
+beta_beta <- beta %>%
+  mutate(
+    datos = map(
+      datos,
+      ~ filter(
+        .x,
+        term == "mkt_returns"
+      ) 
+    ),
+    n = map_dbl(datos, ~ length(.[[1]]))
+  )
+
+
+beta_beta <- filter(beta_beta, n > 0) 
+beta_beta <- mutate(beta_beta, datos = map(datos, select, mes, beta = estimate))
+beta_beta$datos[[5]]
+sum(beta_beta$n)
+
+beta_beta%>% 
+  unnest(datos) %>% 
+  pivot_wider(
+    id_cols = mes, 
+    names_from = gvkey_iid,
+    values_from = beta,
+    #values_fn = list(beta = length)
+    values_fn = list(beta = sum)
+  ) %>% mutate(mes = yearmonth(mes)) %>% View()
+  # ) %>% select(-1) %>% map_dbl(~sum(!is.na(.), na.rm = T)) %>% sum
+
+
 ```
 
 ## Rendimientos Equally weighted
