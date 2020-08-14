@@ -5,6 +5,8 @@ date: "30/11/2019"
 output:
   html_document:
     df_print: paged
+editor_options: 
+  chunk_output_type: inline
 ---  
 
 ```{r loading libraries, message=FALSE, warning=FALSE}
@@ -12,9 +14,9 @@ library(tidyverse)
 library(lubridate)
 library(readxl)
 library(tsibble)
-library(rlang)
 library(broom)
 library(slide)
+library(moments)
 ```
 
 ```{r importing Compustat daily data}
@@ -38,7 +40,7 @@ raw_data <-
 ```
 
 ```{r importing market index data}
-mkt_index <-
+mkt_returns <-
   read_csv(
     file = "Compustat_Index.csv",
     col_types = cols(
@@ -48,7 +50,40 @@ mkt_index <-
   ) %>%
   filter(gvkeyx == "150039") %>%
   mutate(mes = yearmonth(datadate)) %>%
-  select(mes, prccm)
+  select(mes, prccm) %>%
+  mutate(
+    mthly_mkt_ret = prccm / lag(prccm) - 1,
+    yrly_mkt_ret = prccm / lag(prccm, 12) - 1,
+    twoyr_mkt_ret = prccm / lag(prccm, 24) - 1,
+    fiveyr_mkt_ret = prccm / lag(prccm, 60) - 1
+  )
+```
+
+```{r importing funadamentals data}
+fundamentals <-
+  read_csv(
+    file = "Compustat_Fundamentals2.csv",
+    col_types = cols(
+      gvkey = col_character(),
+      datadate = col_date(format = "%Y%m%d"),
+      ceqq = col_number()
+    ),
+    na = c("N/A",""),
+    skip = 1
+  ) 
+
+emision_primaria <- fundamentals %>%
+  select(gvkey, prirow) %>%
+  distinct() %>%
+  drop_na() %>%
+  unite(gvkey_iid, gvkey, prirow, sep = "_")
+
+fundamentals <- fundamentals %>%
+  mutate(mes = yearmonth(datadate)) %>%
+  select(datadate, mes, gvkey, conm, ceqq)
+
+  
+
 ```
 
 ```{r processing raw data} 
@@ -70,7 +105,7 @@ daily_raw_data <- raw_data %>%
     mv = prccd * cshoc / 1000000,
     mes = yearmonth(datadate)
   ) %>%
-  select(gvkey_iid, gvkey, iid, mes, conm, sector, adj_price, mv)
+  select(gvkey_iid, gvkey, iid, datadate, mes, conm, sector, adj_price, cshoc, mv)
 ```
 
 ```{r converting to monthly data}
@@ -101,240 +136,491 @@ monthly_data_inc <- monthly_raw_data %>%
 ```
 
 ```{r filling gaps}
-monthly_data <- monthly_data_inc %>%
+monthly_data <- 
+  monthly_data_inc %>%
   as_tsibble(
     key = gvkey_iid,
     index = mes
   ) %>%
   fill_gaps() %>% # Existe la opción de rellenar con alguna función que interpole
-  fill(everything(), .direction = "down") %>% # contrapuesto a lo que tomar el valor anterior
+  fill(-datadate, .direction = "down") %>% # contrapuesto a tomar el valor anterior
   select(-c(gvkey, iid))
 ```
 
 ```{r calculating rolling betas}
-beta <- monthly_data %>%
+stcks_mkt_rets <- monthly_data %>%
   group_by(gvkey_iid) %>%
   mutate(
-    returns = adj_price / lag(adj_price) - 1,
+    mthly_ret = adj_price / lag(adj_price) - 1,
     adj_price = NULL
   ) %>%
   drop_na() %>%
-  nest(datos = c(mes, returns, mv)) %>% 
+  select(-c(mv, cshoc, datadate)) %>%
+  mutate(mthly_ret = if_else(mthly_ret > 3.5, NA_real_, mthly_ret)) %>% 
+  inner_join(
+    mkt_returns[-1, c(1, 3)],
+    by = "mes"
+  ) %>%
+  nest(betas = c(mes, mthly_ret, mthly_mkt_ret))
+
+rolling_betas <- stcks_mkt_rets %>%
   mutate(
-    datos = map(
-      datos,
-      ~ inner_join(
+    betas = map(
+      betas,
+      ~ mutate(
         .x,
-        mutate(
-          mkt_index,
-          mkt_returns = prccm / lag(prccm) - 1,
-          prccm = NULL
-        ),
-        by = "mes"
-      ) %>%
-        mutate(
-          rolling = slide(
-            .,
-            ~ lm(returns ~ mkt_returns, data = .),
-            .before = 36,
-            .complete = TRUE
-          ), # %>% purrr::modify(tidy)
-          rolling = purrr::modify(rolling, tidy),
+        rolling = slide(
+          .x = .,
+          .f = ~ lm(mthly_ret ~ mthly_mkt_ret, data = .x),
+          .before = 35,
+          .complete = TRUE
         ) %>%
-        select(mes, rolling) %>%
-        unnest(rolling)
+          map_dbl(~ if_else(is.null(.), NA_real_, coef(.x)[[2]]))
+      ) %>%
+        select(mes, rolling)
     )
-  ) 
-
-
-
-beta_beta <- beta %>%
-  mutate(
-    datos = map(
-      datos,
-      ~ filter(
-        .x,
-        term == "mkt_returns"
-      ) 
-    ),
-    n = map_dbl(datos, ~ length(.[[1]]))
   )
 
+rolling_betas <- rolling_betas[map_dbl(rolling_betas$betas, nrow) > 35, ]
 
-beta_beta <- filter(beta_beta, n > 0) 
-beta_beta <- mutate(beta_beta, datos = map(datos, select, mes, beta = estimate))
-beta_beta$datos[[5]]
-sum(beta_beta$n)
-
-beta_beta%>% 
-  unnest(datos) %>% 
-  pivot_wider(
-    id_cols = mes, 
-    names_from = gvkey_iid,
-    values_from = beta,
-    #values_fn = list(beta = length)
-    values_fn = list(beta = sum)
-  ) %>% mutate(mes = yearmonth(mes)) %>% View()
-  # ) %>% select(-1) %>% map_dbl(~sum(!is.na(.), na.rm = T)) %>% sum
-
-
-```
-
-## Rendimientos Equally weighted
-
-```{r}
-returns_sector_ew <- datos_mensuales %>% 
-  group_by(gvkey_iid) %>% 
-  select(gvkey_iid, datadate, conm, BMV, adj_price, mv, mes) %>% 
-  mutate(!!!lagged_returns(adj_price)) %>% 
-  group_by(BMV) %>% 
-  arrange(conm, datadate) %>% 
-  group_split()
-  
-returns_sector_ew <- set_names(returns_sector_ew, map_chr(returns_sector_ew, ~ .x$BMV[[1]]))
-
-# returns_sector_ew1 %>%
-#   map(
-#     ~ index_by(.x) %>%
-#       select(gvkey_iid, mes, Return_12) %>%
-#       pivot_wider(
-#         names_from = gvkey_iid,
-#         values_from = Return_12
-#       )
+# rolling_betas %>%
+#   unnest(betas) %>%
+#   drop_na() %>%
+#   pivot_wider(
+#     id_cols = mes,
+#     names_from = gvkey_iid,
+#     values_from = rolling
 #   ) %>%
-#   `[[`(1) %>%
-#   ungroup() %>%
-#   arrange(mes) %>%
-#   slice(365) %>%
-#   select(-1) %>%
-#   map_dbl(~.x) %>% mean(na.rm=T) %>% View()
-
-returns_sector_ew1  <- map(
-  .x = returns_sector_ew,
-  .f = ~ summarise_at(
-    .tbl = index_by(.x),
-    .vars = vars(starts_with("Return")),
-    .funs = ~ mean(., na.rm = TRUE)
-  ) 
-) #%>% map(~left_join(.x, mkt_rets))
+#   mutate(mes = yearmonth(mes))
 ```
+ 
+## Tablas
 
 ```{r}
-returns_sector_ew <- function(lag, umbral) {
-lag <- enquo(lag)
-umbral <- enquo(umbral)
-datos_mensuales %>%
+tables_data <- monthly_data %>%
   group_by(gvkey_iid) %>%
-  select(gvkey_iid, datadate, conm, sector, adj_price, mv, mes) %>%
   mutate(
-    return = adj_price / lag(adj_price, !!lag) - 1,
-    return5 = adj_price / lag(adj_price, 60) - 1
+    mthly_ret = adj_price / lag(adj_price) - 1
   ) %>%
-  group_by(sector) %>%
-  arrange(conm, datadate) %>%
-  group_split() %>%
-  set_names(., map_chr(., ~ .x$sector[[1]])) %>%
-  map(
-    ~ index_by(.) %>%
-      summarise(
-        sector_rend = mean(return, na.rm = T),
-        sector_rend5 = mean(return5, na.rm = T)
-      )
+  drop_na() %>%
+  select(-datadate) %>%
+  left_join(
+    y = rolling_betas %>%
+      unnest(betas) %>%
+      drop_na() %>%
+      select(gvkey_iid, mes, betas = rolling),
+    by = c("gvkey_iid", "mes")
   ) %>%
-  map(
-    ~ left_join(
-      .,
-      mkt_index %>%
-        mutate(
-          mkt_rend = prccm / lag(prccm, !!lag) - 1,
-          prccm = NULL
-        )
-    ) %>%
-      mutate(net_mkt_ret = sector_rend - mkt_rend) %>%
-      select(-mkt_rend) %>%
-      mutate(id_up = if_else(sector_rend >= !!umbral & net_mkt_ret >= !!umbral, 1, 0))
-  )
-}
-
-returns_sector_ew(24, 1)
-```
-
-```{r creating portfolio returns functions}
-lagged_returns <- function(var, name, ...) {
-  var <- enquo(var)
-  name <- enquo(name)
-  indices <- c(...)
-    map(
-      indices,
-      ~ quo(!!var / lag(!!var, !!.x) - 1)
-    ) %>% 
-    set_names(sprintf("%s_ret_%d", quo_text(name), indices))
-}
-
-
-make_returns <- function(df, var = adj_price, lag) {
-  lag <- enquo(lag)
-  var <- enquo(var)
+  left_join(
+    fundamentals[, -c(1, 3)],
+    by = c("mes", "conm")
+  ) %>%
   mutate(
-    df,
-    return = !!var / lag(!!var, !!lag) - 1,
-    !!var := NULL
-  )
-}
-
-make_returns2 <- function(var = adj_price, lag) {
-  lag <- enquo(lag)
-  var <- enquo(var)
-
-  quos(
-    !!var / lag(!!var, !!lag) - 1,
-    NULL
+    BM = ceqq / mv,
+    ceqq = NULL
   ) %>% 
-    set_names(c("returns", var))
-}
+  ungroup() %>% 
+  rename(precio = adj_price, volumen = cshoc, size = mv)
 
-make_returns2(lag =60)
-
-ew_rets <- function(df, lag) {
-  lag <- enquo(lag)
-  df %>%
-    group_by(gvkey_iid) %>%
-    mutate(return = adj_price / lag(adj_price, !!lag) - 1) %>%
-    group_by(sector) %>%
-    index_by(mes) %>%
-    summarise(pf_ret = mean(return, na.rm = TRUE))
-}
-
-vw_rets <- function(df, ...) {
-  df %>%
-    group_by(sector) %>%
-    index_by(mes) %>%
-    mutate(wt = mv / sum(mv)) %>%
-    summarise(pf_val = sum(adj_price * wt)) %>%
-    group_by(sector) %>% 
-    mutate(
-      !!!lagged_returns(pf_val, pf, ...),
-      pf_val = NULL
-    ) 
-}
 ```
 
-```{r analyzing bubbles}
-vw_rets(monthly_data, 24, 60) %>% 
-  group_split() %>% 
-  # pivot_wider(
-  #   names_from = sector,
-  #   values_from = pf_ret
-  # ) %>% 
+### Tabla 1
+
+```{r}
+tabla1 <- bind_rows(
+  tables_data %>%
+    ungroup() %>%
+    select(gvkey_iid, mes) %>%
+    group_by(mes) %>%
+    summarise(n = n_distinct(gvkey_iid)) %>%
+    select(n) %>% {
+      bind_cols(
+        variable = "# de empresas",
+        promedio = map_dbl(., mean, na.rm = T),
+        desv_est = map_dbl(., sd, na.rm = T),
+        sesgo = map_dbl(., skewness, na.rm = T),
+        curtosis = map_dbl(., kurtosis, na.rm = T),
+        min = map_dbl(., min, na.rm = T),
+        perc_10 = map_dbl(., quantile, prob = 0.1, na.rm = T),
+        perc_25 = map_dbl(., quantile, prob = 0.25, na.rm = T),
+        mediana = map_dbl(., median, na.rm = T),
+        perc_75 = map_dbl(., quantile, prob = 0.75, na.rm = T),
+        perc_90 = map_dbl(., quantile, prob = 0.9, na.rm = T),
+        max = map_dbl(., max, na.rm = T)
+      )
+    },
+  tables_data %>%
+    ungroup() %>%
+    select(
+      size,
+      BM,
+      precio,
+      volumen,
+      beta_xm = betas,
+      rendimientos = mthly_ret
+    ) %>% {
+      bind_cols(
+        variable = c("size", "bm", "precio", "volumen", "beta_xm", "Todas las empresas"),
+        promedio = map_dbl(., mean, na.rm = T),
+        desv_est = map_dbl(., sd, na.rm = T),
+        sesgo = map_dbl(., skewness, na.rm = T),
+        curtosis = map_dbl(., kurtosis, na.rm = T),
+        min = map_dbl(., min, na.rm = T),
+        perc_10 = map_dbl(., quantile, prob = 0.1, na.rm = T),
+        perc_25 = map_dbl(., quantile, prob = 0.25, na.rm = T),
+        mediana = map_dbl(., median, na.rm = T),
+        perc_75 = map_dbl(., quantile, prob = 0.75, na.rm = T),
+        perc_90 = map_dbl(., quantile, prob = 0.9, na.rm = T),
+        max = map_dbl(., max, na.rm = T)
+      )
+    },
+  tables_data[, c(1:2, 4, 8)] %>%
+    pivot_wider(id_cols = c(gvkey_iid, mes), names_from = sector, values_from = mthly_ret) %>%
+    .[, -(1:2)] %>% {
+      bind_cols(
+        variable = c("IT", "materials", "telecomm", "industrials", "financials", "CD&S", "Staples", "Health", "Energy"),
+        promedio = map_dbl(., mean, na.rm = T),
+        desv_est = map_dbl(., sd, na.rm = T),
+        sesgo = map_dbl(., skewness, na.rm = T),
+        curtosis = map_dbl(., kurtosis, na.rm = T),
+        min = map_dbl(., min, na.rm = T),
+        perc_10 = map_dbl(., quantile, prob = 0.1, na.rm = T),
+        perc_25 = map_dbl(., quantile, prob = 0.25, na.rm = T),
+        mediana = map_dbl(., median, na.rm = T),
+        perc_75 = map_dbl(., quantile, prob = 0.75, na.rm = T),
+        perc_90 = map_dbl(., quantile, prob = 0.9, na.rm = T),
+        max = map_dbl(., max, na.rm = T)
+      )
+    }
+)
+```
+
+
+```{r}
+#otra alternativa
+tabla1_alt <- tables_data %>%
+  ungroup() %>% 
+  select(1:4, precio = adj_price, size = mv, volumen = cshoc, betas, BM = bm) %>% 
+  pivot_longer(cols = 5:9, names_to = "variable") %>%
+  group_by(sector) %>%
+  group_split() %>%
   map(
-  ~ left_join(
-      x = .,
-      y = mutate(mkt_index, !!!lagged_returns(var = prccm, mkt, 24, 60 ), prccm = NULL),
-      by = "mes"
-    ))# %>% 
-    mutate(
-      net_mkt_ret = Returns_24 - return,
-      return = NULL
-    )
+    ~ group_by(.x, variable) %>%
+      summarise(
+        prom = mean(value, na.rm = T),
+        desv_est = sd(value, na.rm = T),
+        sesgo = skewness(value, na.rm = T),
+        curtosis = kurtosis(value, na.rm = T),
+        min = min(value, na.rm = T),
+        perc_10 = quantile(value, prob = 0.1, na.rm = T),
+        perc_25 = quantile(value, prob = 0.25, na.rm = T),
+        mediana = median(value, na.rm = T),
+        perc_75 = quantile(value, prob = 0.75, na.rm = T),
+        perc_90 = quantile(value, prob = 0.9, na.rm = T),
+        max = max(value, na.rm = T)
+      )
   )
 ```
+
+
+### Tabla 2
+```{r}
+tabla2 <- cor(tabla1[, -1])
+```
+
+### Tabla 3
+Promedio de cada variable por año
+
+```{r Tabla 3}
+table3 <- inner_join(
+  tables_data %>%
+    group_by(year = year(mes)) %>% 
+    summarise(
+      `# empresas` = n_distinct(conm),
+      Size = mean(size),
+      BM = mean(BM, na.rm = TRUE),
+      Volumen = mean(volumen, na.rm = TRUE),
+      Precio = mean(precio),
+      Beta_XM = mean(betas, na.rm = TRUE),
+      `Todas las empresas` = mean(mthly_ret)
+    ),
+  tables_data %>%
+     group_by(year = year(mes)) %>% 
+    group_by(sector, add = TRUE) %>%
+    summarise(returns = mean(mthly_ret, na.rm = TRUE)) %>%
+    pivot_wider(names_from = sector, values_from = returns)
+)
+```
+
+```{r tabla 4}
+# se calculan las barreras de tamaño para cada variable
+size_pf <- tables_data %>% 
+  ungroup() %>% 
+  #group_by(gvkey_iid) %>% 
+  summarise(
+    qntl = list(enframe(quantile(size, probs = c(0.3, 0.7), na.rm = TRUE)))
+  ) %>% 
+ unnest(qntl) %>% 
+  pivot_wider(
+    names_from = name,
+    values_from = value
+  )
+
+bm_pf <- tables_data %>% 
+  ungroup() %>% 
+  summarise(
+    qntl = list(enframe(quantile(BM, probs = c(0.3, 0.7), na.rm = TRUE)))
+  ) %>% 
+ unnest(qntl) %>% 
+  pivot_wider(
+    names_from = name,
+    values_from = value
+  )
+
+beta_pf <- tables_data %>% 
+  ungroup() %>% 
+  summarise(
+    qntl = list(enframe(quantile(betas, probs = c(0.3, 0.7), na.rm = TRUE)))
+  ) %>% 
+ unnest(qntl) %>% 
+  pivot_wider(
+    names_from = name,
+    values_from = value
+  )
+
+
+TLE_pf <- tables_data %>% 
+  ungroup() %>% 
+  summarise(
+    qntl = list(enframe(quantile(mthly_ret, probs = c(0.3, 0.7), na.rm = TRUE)))
+  ) %>% 
+ unnest(qntl) %>% 
+  pivot_wider(
+    names_from = name,
+    values_from = value
+  )
+
+sizes <- tables_data %>% 
+  group_by(gvkey_iid) %>% 
+  summarise(promedio = mean(size, na.rm = TRUE)) %>% 
+  mutate(
+    size_pf = if_else(
+      promedio < size_pf$`30%`,
+      "small size", 
+      if_else(
+        promedio > size_pf$`70%`,
+        "big size",
+        "medium size"
+      )
+    )
+  ) %>% 
+  select(gvkey_iid, size_pf)
+
+buctumarquet <- tables_data %>% 
+  group_by(gvkey_iid) %>% 
+  summarise(promedio = mean(BM, na.rm = TRUE)) %>% 
+  mutate(
+    bm_pf = if_else(
+      promedio < bm_pf$`30%`,
+      "small bm", 
+      if_else(
+        promedio > bm_pf$`70%`,
+        "big bm",
+        "medium bm"
+      )
+    )
+  ) %>% 
+  select(gvkey_iid, bm_pf)
+
+Betaa <- tables_data %>% 
+  group_by(gvkey_iid) %>% 
+  summarise(promedio = mean(betas, na.rm = TRUE)) %>% 
+  mutate(
+    beta_pf = if_else(
+      promedio < beta_pf$`30%`,
+      "small beta", 
+      if_else(
+        promedio > beta_pf$`70%`,
+        "big beta",
+        "medium beta"
+      )
+    )
+  ) %>% 
+  select(gvkey_iid, beta_pf)
+
+TLE <- tables_data %>% 
+  group_by(gvkey_iid) %>% 
+  summarise(promedio = mean(mthly_ret, na.rm = TRUE)) %>% 
+  mutate(
+    TLE_pf = if_else(
+      promedio < TLE_pf$`30%`,
+      "small returns", 
+      if_else(
+        promedio > TLE_pf$`70%`,
+        "big returns",
+        "medium returns"
+      )
+    )
+  ) %>% 
+  select(gvkey_iid, TLE_pf)
+
+panelA_tabla4 <- tables_data %>% 
+  mutate(
+    CDS = if_else(sector == "Consumer Discretionary & Services", mthly_ret, NA_real_),
+    IT = if_else(sector == "Information Technology", mthly_ret, NA_real_),
+    FS = if_else(sector == "Financial Services", mthly_ret, NA_real_),
+    HC = if_else(sector == "Health Care", mthly_ret, NA_real_),
+    Energy = if_else(sector == "Energy", mthly_ret, NA_real_),
+    Telecomm = if_else(sector == "Telecommunication Services", mthly_ret, NA_real_), 
+    CS = if_else(sector == "Consumer Staples", mthly_ret, NA_real_), 
+    `Resto de empresas` = if_else(sector == "Materials" | sector == "Industrials", mthly_ret, NA_real_), 
+  ) %>% 
+{left_join(., sizes, by = "gvkey_iid")} %>% 
+  group_by(size_pf) %>% 
+  summarise(
+    n = n_distinct(gvkey_iid),
+    size = mean(size, na.rm = TRUE),
+    BM = mean(BM, na.rm = TRUE),
+    volumen = mean(volumen, na.rm = TRUE),
+    precio = mean(precio, na.rm = TRUE),
+    beta_xm = mean(betas, na.rm = TRUE),
+    `Todas las empresas` = mean(mthly_ret, na.rm = TRUE),
+    CDS =  mean(CDS, na.rm = TRUE),
+    IT =  mean(IT, na.rm = TRUE),
+    FS = mean(FS, na.rm = TRUE),
+    HC = mean(HC, na.rm = TRUE),
+    Energy = mean(Energy, na.rm = TRUE),
+    Telecomm = mean(Telecomm, na.rm = TRUE),
+    CS = mean(CS, na.rm = TRUE),
+    RDE = mean(`Resto de empresas`, na.rm = TRUE)
+  )
+
+
+panelB_tabla4 <- tables_data %>% 
+  mutate(
+    CDS = if_else(sector == "Consumer Discretionary & Services", mthly_ret, NA_real_),
+    IT = if_else(sector == "Information Technology", mthly_ret, NA_real_),
+    FS = if_else(sector == "Financial Services", mthly_ret, NA_real_),
+    HC = if_else(sector == "Health Care", mthly_ret, NA_real_),
+    Energy = if_else(sector == "Energy", mthly_ret, NA_real_),
+    Telecomm = if_else(sector == "Telecommunication Services", mthly_ret, NA_real_), 
+    CS = if_else(sector == "Consumer Staples", mthly_ret, NA_real_), 
+    `Resto de empresas` = if_else(sector == "Materials" | sector == "Industrials", mthly_ret, NA_real_), 
+  ) %>% 
+{left_join(., buctumarquet, by = "gvkey_iid")} %>% 
+  group_by(bm_pf) %>% 
+  summarise(
+    n = n_distinct(gvkey_iid),
+    size = mean(size, na.rm = TRUE),
+    BM = mean(BM, na.rm = TRUE),
+    volumen = mean(volumen, na.rm = TRUE),
+    precio = mean(precio, na.rm = TRUE),
+    beta_xm = mean(betas, na.rm = TRUE),
+    `Todas las empresas` = mean(mthly_ret, na.rm = TRUE),
+    CDS =  mean(CDS, na.rm = TRUE),
+    IT =  mean(IT, na.rm = TRUE),
+    FS = mean(FS, na.rm = TRUE),
+    HC = mean(HC, na.rm = TRUE),
+    Energy = mean(Energy, na.rm = TRUE),
+    Telecomm = mean(Telecomm, na.rm = TRUE),
+    CS = mean(CS, na.rm = TRUE),
+    RDE = mean(`Resto de empresas`, na.rm = TRUE)
+  )
+
+panelC_tabla4 <- tables_data %>% 
+  mutate(
+    CDS = if_else(sector == "Consumer Discretionary & Services", mthly_ret, NA_real_),
+    IT = if_else(sector == "Information Technology", mthly_ret, NA_real_),
+    FS = if_else(sector == "Financial Services", mthly_ret, NA_real_),
+    HC = if_else(sector == "Health Care", mthly_ret, NA_real_),
+    Energy = if_else(sector == "Energy", mthly_ret, NA_real_),
+    Telecomm = if_else(sector == "Telecommunication Services", mthly_ret, NA_real_), 
+    CS = if_else(sector == "Consumer Staples", mthly_ret, NA_real_), 
+    `Resto de empresas` = if_else(sector == "Materials" | sector == "Industrials", mthly_ret, NA_real_), 
+  ) %>% 
+{left_join(., Betaa, by = "gvkey_iid")} %>% 
+  group_by(beta_pf) %>% 
+  summarise(
+    n = n_distinct(gvkey_iid),
+    size = mean(size, na.rm = TRUE),
+    BM = mean(BM, na.rm = TRUE),
+    volumen = mean(volumen, na.rm = TRUE),
+    precio = mean(precio, na.rm = TRUE),
+    beta_xm = mean(betas, na.rm = TRUE),
+    `Todas las empresas` = mean(mthly_ret, na.rm = TRUE),
+    CDS =  mean(CDS, na.rm = TRUE),
+    IT =  mean(IT, na.rm = TRUE),
+    FS = mean(FS, na.rm = TRUE),
+    HC = mean(HC, na.rm = TRUE),
+    Energy = mean(Energy, na.rm = TRUE),
+    Telecomm = mean(Telecomm, na.rm = TRUE),
+    CS = mean(CS, na.rm = TRUE),
+    RDE = mean(`Resto de empresas`, na.rm = TRUE)
+  )
+
+panelD_tabla4 <- tables_data %>% 
+  mutate(
+    CDS = if_else(sector == "Consumer Discretionary & Services", mthly_ret, NA_real_),
+    IT = if_else(sector == "Information Technology", mthly_ret, NA_real_),
+    FS = if_else(sector == "Financial Services", mthly_ret, NA_real_),
+    HC = if_else(sector == "Health Care", mthly_ret, NA_real_),
+    Energy = if_else(sector == "Energy", mthly_ret, NA_real_),
+    Telecomm = if_else(sector == "Telecommunication Services", mthly_ret, NA_real_), 
+    CS = if_else(sector == "Consumer Staples", mthly_ret, NA_real_), 
+    `Resto de empresas` = if_else(sector == "Materials" | sector == "Industrials", mthly_ret, NA_real_), 
+  ) %>% 
+{left_join(., TLE, by = "gvkey_iid")} %>% 
+  group_by(TLE_pf) %>% 
+  summarise(
+    n = n_distinct(gvkey_iid),
+    size = mean(size, na.rm = TRUE),
+    BM = mean(BM, na.rm = TRUE),
+    volumen = mean(volumen, na.rm = TRUE),
+    precio = mean(precio, na.rm = TRUE),
+    beta_xm = mean(betas, na.rm = TRUE),
+    `Todas las empresas` = mean(mthly_ret, na.rm = TRUE),
+    CDS =  mean(CDS, na.rm = TRUE),
+    IT =  mean(IT, na.rm = TRUE),
+    FS = mean(FS, na.rm = TRUE),
+    HC = mean(HC, na.rm = TRUE),
+    Energy = mean(Energy, na.rm = TRUE),
+    Telecomm = mean(Telecomm, na.rm = TRUE),
+    CS = mean(CS, na.rm = TRUE),
+    RDE = mean(`Resto de empresas`, na.rm = TRUE)
+  )
+
+
+ 
+
+```
+
+```{r TABLA 2 Correlaciones}
+
+tabla2 <- tables_data %>% 
+  mutate(mes = yearmonth(mes)) %>% 
+  as_tsibble(key = gvkey_iid, index = mes) %>%
+  summarise_at(
+    .vars = vars(precio, volumen, size, mthly_ret, betas, BM),
+    .funs = mean,
+    na.rm = TRUE
+  ) %>%
+  {rcorr(as.matrix(.[,-1]))}
+  
+tabla2$r
+tabla2$P
+
+
+```
+
+```{r TABLA 1 v2}
+tables_data %>% 
+  mutate(mes = yearmonth(mes)) %>% 
+  as_tsibble(key = gvkey_iid, index = mes) %>%
+  summarise_at(
+    .vars = vars(precio, volumen, size, mthly_ret, betas, BM),
+    .funs = mean,
+    na.rm = TRUE
+  )
+tabla3
+```
+
