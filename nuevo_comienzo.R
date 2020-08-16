@@ -1,6 +1,8 @@
 # Este es un nuevo comienzo
 library(readr)
 library(slider)
+library(dplyr)
+library(ggplot2)
 
 datos <- read_csv(
     file = "Compustat_Global_Daily.csv",
@@ -10,13 +12,78 @@ datos <- read_csv(
     )
 )
 
+fundamentals <- read_csv(
+  file = "Compustat_Fundamentals.csv",
+  col_types = cols(
+    gvkey = col_character(),
+    datadate = col_date(format = "%Y%m%d"),
+    ceqq = col_number()
+  ),
+  na = c("N/A", "")
+)
+
+primary <- fundamentals %>%
+    group_by(gvkey, conm) %>%
+    distinct(prirow) %>%
+    drop_na() %>%
+    ungroup() %>%
+    unite(gvkey_iid, gvkey, prirow, remove = FALSE)
+
+sector <-  read_xlsx(
+  path = "Sectores_GICS_BMV.xlsx",
+  sheet = "Sectores",
+  range = "A1:D292",
+  col_names = TRUE,
+  col_types = c("text")
+)[, 1:2]
+
+datos <- left_join(datos, sector, by = "gvkey")
+datos <- mutate(datos, adjusted_price = (prccd / ajexdi) * trfd)
+
+consumer_2000 <- filter(
+    datos,
+    sector == "Consumer Staples",
+    datadate >= "2000-01-01",
+    curcdd == "MXN",
+    monthend == 1
+)
+
+consumer_all <- filter(
+    datos,
+    sector == "Consumer Staples",
+    curcdd == "MXN" | curcdd == "MXP",
+    monthend == 1
+)
+
+consumer_2000 <- unite(consumer_2000, gvkey_iid, gvkey, iid, remove = FALSE)
+consumer_all <- unite(consumer_all, gvkey_iid, gvkey, iid, remove = FALSE)
+
+consumer_2000 <- consumer_2000 %>% filter(gvkey_iid %in% fundamentals$gvkey_iid)
+
+prueba %>%
+    ungroup() %>%
+    ggplot(aes(datadate, adjusted_price, color = conm)) +
+    geom_point() +
+    facet_wrap(~conm, nrow = 8, ncol = 5) +
+    theme(legend.position = "None")
+
+prueba <- consumer_all %>%
+    group_by(gvkey) %>%
+    group_modify(~ if (n_distinct(.x$iid) > 1) {
+        filter(.x, gvkey_iid %in% primary$gvkey_iid)
+    } else {
+        .x
+    })
+
+tsibble(mutate(prueba, date = yearmonth(datadate)), key = gvkey_iid, index = date) %>% count_gaps()
+
 bimbo <- filter(
     datos,
     conm == "GRUPO BIMBO SA DE CV",
     monthend == 1,
     datadate >= "2000/01/01",
     curcdd == "MXN"
- ) %>%
+) %>%
     mutate(
         adjusted_price = (prccd / ajexdi),
         log_return = c(NA, diff(log(adjusted_price))),
@@ -43,6 +110,6 @@ bimbo <- mutate(
 )
 
 bimbo %>%
-    ggplot(aes(datadate, returns)) +
+    ggplot(aes(date, cum_ret)) +
     geom_line(color = "dodgerblue") +
     geom_hline(yintercept = 0)
