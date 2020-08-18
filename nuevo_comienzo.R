@@ -45,13 +45,21 @@ datos %>%
         monthend == 1
     ) -> datos_mth
 
+
 datos_mth %>%
     mutate(
+        prccd = if_else(curcdd == "MXP", prccd / 1000, prccd),
         adjusted_price = (prccd / ajexdi) * trfd,
         sector = vlookup(gvkey, sector, "gvkey", "sector"),
-        prccd = if_else(prccd == "MXP", prccd / 1000, prccd),
         date = yearmonth(datadate)
-    ) -> datos_mth
+    )  %>%
+    unite(gvkey_iid, gvkey, iid, remove = FALSE) -> datos_mth
+
+# Para el caso de Industrias Resistol el cambio de moneda está
+# contemplado por el ajexdi
+
+
+datos_mth <- subset(datos_mth, !gvkey_iid %in% df$gvkey_iid)
 
 datos_mth %>%
     filter(
@@ -63,29 +71,31 @@ consumer_all %>%
         datadate >= "2000-01-01"
     ) -> consumer_2000
 
-
-consumer_2000 <- unite(consumer_2000, gvkey_iid, gvkey, iid, remove = FALSE)
-consumer_all <- unite(consumer_all, gvkey_iid, gvkey, iid, remove = FALSE)
-
+#### funcionalizar
 consumer_all %>%
     group_by(gvkey) %>%
     group_modify(~ if (!any(unique(.x$gvkey_iid) %in% primary) & n_distinct(.x$iid) > 1) {
-        group_by(.x,iid) %>% mutate(freq=n()) %>% ungroup() %>% filter(freq == max(freq))
+        group_by(.x,iid) %>% mutate(freq=n()) %>% ungroup() %>% filter(freq == max(freq)) %>% select(-freq)
     } else if (any(unique(.x$gvkey_iid) %in% primary) & n_distinct(.x$iid) > 1) {
         filter(.x, gvkey_iid %in% primary)
     } else {
         .x
-    }) %>%
+    }) -> consumer_all_filtered
+  
+
+
+consumer_all_filtered %>%
     ungroup() %>%
     ggplot(aes(datadate, adjusted_price, color = conm)) +
     geom_line() +
     facet_wrap(~conm, nrow = 8, ncol = 5) +
     theme(legend.position = "None")
 
+consumer_all_filtered %>%
+    tsibble(key = gvkey_iid, index = date) %>%
+    fill_gaps()
 
-tsibble(mutate(prueba, date = yearmonth(datadate)), key = gvkey_iid, index = date) %>% count_gaps()
-
-
+#rellenar los de 6 meses o menos
 
 # prueba de runups
 bimbo <- filter(
@@ -123,10 +133,18 @@ bimbo <- mutate(
 bimbo %>%
     ggplot(aes(date, cum_ret)) +
     geom_line(color = "dodgerblue") +
-    geom_hline(yintercept = 0)}
+    geom_hline(yintercept = 0)
 
     
 vlookup <- function(this, df, key, value) {
-  m <- match(this, df[[key]])
-  df[[value]][m]
+    m <- match(this, df[[key]])
+    df[[value]][m]
 }
+
+df <- aggregate(gvkey ~ gvkey_iid, datos_mth, length)
+colnames(df)[colnames(df) == "gvkey"] <- "n"
+df <- df[which(df$n < 12), ]
+df <- df[order(df$n), ]
+row.names(df) <- NULL
+df$name <- vlookup(df$gvkey_iid, datos_mth, "gvkey_iid", "conm")
+sum(df$n)
